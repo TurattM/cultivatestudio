@@ -1,7 +1,10 @@
-node_modules/
-.next/
-out/
-.DS_Store
-*.log
-.env
-.env.local
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'export',
+  trailingSlash: true,
+  images: {
+    unoptimized: true
+  }
+}
+
+module.exports = nextConfig
