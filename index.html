@@ -2217,7 +2217,7 @@ function _swotPopulate(){
       hint.style.display='block';
     }
     if(_bizSwots[_bizSwotCode]) _swotRenderEditor(_bizSwots[_bizSwotCode]);
-    else document.getElementById('biz-swot-editor').style.display='none';
+    else { var _se=document.getElementById('biz-swot-editor'); if(_se) _se.style.display='none'; }
   }
 }
 
@@ -2235,7 +2235,7 @@ window.bizSwotLoadOutletByCode = function(code){
     hint.style.display='block';
   }
   if(_bizSwots[code]) _swotRenderEditor(_bizSwots[code]);
-  else document.getElementById('biz-swot-editor').style.display='none';
+  else { var _se=document.getElementById('biz-swot-editor'); if(_se) _se.style.display='none'; }
 };
 
 window.bizSwotLoadOutlet = window.bizSwotLoadOutletByCode;
@@ -2691,13 +2691,15 @@ window.capexFilterStatus = function(status){
 
 function capexRenderPipeline(){
   var list = document.getElementById('capex-pipeline-list');
-  document.getElementById('capex-detail').style.display='none';
+  if(!list) return;
+  var det=document.getElementById('capex-detail'); if(det) det.style.display='none';
+  var emp=document.getElementById('capex-pipeline-empty');
   if(capexRequests.length===0){
     list.innerHTML='';
-    document.getElementById('capex-pipeline-empty').style.display='block';
+    if(emp) emp.style.display='block';
     return;
   }
-  document.getElementById('capex-pipeline-empty').style.display='none';
+  if(emp) emp.style.display='none';
   list.innerHTML = capexRequests.map(function(r){
     var statusClass = {purchasing:'biz-status-purchasing',review:'biz-status-review',approved:'biz-status-approved',rejected:'biz-status-rejected',draft:'biz-status-draft'}[r.status]||'biz-status-draft';
     var statusLabel = {purchasing:'Purchasing',review:'In Review',approved:'Approved',rejected:'Rejected',draft:'Draft'}[r.status]||r.status;
@@ -2710,8 +2712,8 @@ window.capexOpenDetail = function(id){
   var req = capexRequests.find(function(r){return r.id===id;});
   if(!req) return;
   capexCurrentId = id;
-  document.getElementById('capex-pipeline-list').style.display='none';
-  document.getElementById('capex-pipeline-empty').style.display='none';
+  var _pl=document.getElementById('capex-pipeline-list'); if(_pl) _pl.style.display='none';
+  var _pe=document.getElementById('capex-pipeline-empty'); if(_pe) _pe.style.display='none';
   var det = document.getElementById('capex-detail');
   det.style.display='block';
   document.getElementById('capex-detail-title').textContent=req.itemName;
@@ -2727,13 +2729,15 @@ window.capexOpenDetail = function(id){
     return '<div class="biz-chain-step"><div class="biz-chain-dot '+dotClass+'">'+(s.status==='done'?'✓':s.status==='active'?'→':(i+1))+'</div><div class="biz-chain-info"><div class="biz-chain-role">'+s.role+'</div>'+(s.name?'<div class="biz-chain-name">'+s.name+'</div>':'')+(s.comment?'<div class="biz-chain-comment">"'+s.comment+'"</div>':'')+(s.timestamp?'<div class="biz-chain-ts">'+s.timestamp+'</div>':'')+'</div></div>';
   }).join('');
   var actionCard = document.getElementById('capex-action-card');
-  if(req.status!=='approved'&&req.status!=='rejected'){ actionCard.style.display='block'; }
-  else{ actionCard.style.display='none'; }
+  if(actionCard){
+    if(req.status!=='approved'&&req.status!=='rejected'){ actionCard.style.display='block'; }
+    else{ actionCard.style.display='none'; }
+  }
 };
 
 window.capexCloseDetail = function(){
-  document.getElementById('capex-detail').style.display='none';
-  document.getElementById('capex-pipeline-list').style.display='';
+  var _cd=document.getElementById('capex-detail'); if(_cd) _cd.style.display='none';
+  var _cl=document.getElementById('capex-pipeline-list'); if(_cl) _cl.style.display='';
   capexRenderPipeline();
 };
 
@@ -2800,7 +2804,9 @@ window.capexSaveChain = function(){
 };
 
 function capexRenderChainPreview(){
-  document.getElementById('capex-chain-preview').innerHTML = capexChain.map(function(s,i){
+  var el=document.getElementById('capex-chain-preview');
+  if(!el) return;
+  el.innerHTML = capexChain.map(function(s,i){
     return '<div class="biz-chain-step"><div class="biz-chain-dot pending">'+(i+1)+'</div><div class="biz-chain-info"><div class="biz-chain-role">'+(s.role||'—')+'</div></div></div>';
   }).join('');
 }
@@ -3461,7 +3467,7 @@ function capexAutoOutlet(){
     var mapping=JSON.parse(localStorage.getItem('str_mapping')||'[]');
     if(mapping.length&&banner){
       banner.innerHTML='<select id="capex-outlet-sel" onchange="this.form" style="background:transparent;border:none;font-size:.9rem;color:var(--t1);font-family:var(--fb);width:100%"><option value="">— select outlet —</option>'+mapping.map(function(m){return'<option value="'+m.outlet+'">'+m.outlet+' ('+m.code+')</option>';}).join('')+'</select>';
-      document.getElementById('capex-outlet-sel').addEventListener('change',function(){var inp=document.getElementById('capex-outlet');if(inp)inp.value=this.value;});
+      var _csel=document.getElementById('capex-outlet-sel'); if(_csel) _csel.addEventListener('change',function(){var inp=document.getElementById('capex-outlet');if(inp)inp.value=this.value;});
     } else { if(display) display.textContent='Central — select outlet'; input.value=''; }
   } else if(ao&&ao.name){ if(display) display.textContent=ao.name; input.value=ao.name; }
 }
