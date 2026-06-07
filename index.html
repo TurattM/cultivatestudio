@@ -2404,7 +2404,6 @@ _swotRenderSaved();
 /* ── STATE ── */
 var bizData = null;
 var bizCharts = {};
-var capexRequests = JSON.parse(localStorage.getItem('capex_requests')||'[]');
 var capexChain = JSON.parse(localStorage.getItem('capex_chain')||'null') || [
   {role:'Outlet',name:'',email:''},
   {role:'Purchasing',name:'',email:''},
@@ -2414,12 +2413,18 @@ var capexChain = JSON.parse(localStorage.getItem('capex_chain')||'null') || [
   {role:'General Manager',name:'',email:''},
   {role:'Owning Company',name:'',email:''}
 ];
-var capexMyRole = localStorage.getItem('capex_my_role')||'';
 var capexNotifications = JSON.parse(localStorage.getItem('capex_notifications')||'[]');
 var capexEmailJSKey = localStorage.getItem('capex_emailjs_key')||'';
 var capexEmailJSTemplate = localStorage.getItem('capex_emailjs_template')||'';
 var capexEmailJSService = localStorage.getItem('capex_emailjs_service')||'';
 var capexCurrentId = null;
+/* LIVE STORAGE HELPERS */
+function _capexGetRequests(){ try{return JSON.parse(localStorage.getItem('capex_requests')||'[]');}catch(e){return[];} }
+function _capexSaveRequests(arr){ localStorage.setItem('capex_requests',JSON.stringify(arr)); }
+function _capexGetMyRole(){ return localStorage.getItem('capex_my_role')||''; }
+function _capexGetChain(){ try{return JSON.parse(localStorage.getItem('capex_chain')||'null')||capexChain;}catch(e){return capexChain;} }
+var capexRequests = _capexGetRequests();
+var capexMyRole = _capexGetMyRole();
 
 /* ── TAB SWITCHING ── */
 function bizTab(id, btn){
@@ -2438,8 +2443,8 @@ function capexTab(id, btn){
   var sec = document.getElementById('capex-'+id);
   if(sec){ sec.classList.add('biz-active'); }
   if(btn){ btn.classList.add('biz-active'); }
-  if(id==='pipeline') capexRenderPipeline();
-  if(id==='settings') capexRenderChainBuilder();
+  if(id==='pipeline'){ if(typeof capexRenderPipeline==='function') capexRenderPipeline(); }
+  if(id==='settings'){ if(typeof capexRenderChainBuilder==='function') capexRenderChainBuilder(); }
 }
 window.capexTab = capexTab;
 
@@ -2644,6 +2649,8 @@ window.capexPhotosSelected = function(e){
 };
 
 window.capexSubmitRequest = function(){
+  capexRequests = _capexGetRequests();
+  capexChain = _capexGetChain();
   var outlet = document.getElementById('capex-outlet').value.trim();
   var category = document.getElementById('capex-category').value;
   var itemName = document.getElementById('capex-item-name').value.trim();
@@ -2663,17 +2670,28 @@ window.capexSubmitRequest = function(){
     }
   });
 
+  /* Reload chain fresh from localStorage */
+  var _chain = _capexGetChain();
   var req = {
     id: 'CPX-'+Date.now(),
-    outlet,category,itemName,justification,specs,urgency,budget,quotes,
-    status:'purchasing',
+    outlet:outlet,category:category,itemName:itemName,
+    justification:justification,specs:specs,urgency:urgency,budget:budget,quotes:quotes,
+    status:'active:'+(_chain[1]?_chain[1].role:'Purchasing'),
     currentStep:1,
-    chain: capexChain.map(function(s,i){return {role:s.role,name:s.name,status:i===0?'done':i===1?'active':'pending',comment:'',timestamp:i===0?new Date().toLocaleString():''};}),
+    chain: _chain.map(function(s,i){
+      return {role:s.role,name:s.name,email:s.email||'',
+        status:i===0?'done':i===1?'active':'pending',
+        comment:i===0?'Submitted':'',
+        timestamp:i===0?new Date().toLocaleString():''};
+    }),
     created: new Date().toLocaleString()
   };
 
+  /* Reload requests fresh then add */
+  capexRequests = _capexGetRequests();
   capexRequests.unshift(req);
-  localStorage.setItem('capex_requests',JSON.stringify(capexRequests));
+  _capexSaveRequests(capexRequests);
+  capexAddNotification('New request submitted: '+itemName,'info');
 
   /* clear form */
   ['capex-outlet','capex-item-name','capex-justification','capex-specs','capex-budget','capex-purchasing-rec'].forEach(function(id){
@@ -2690,14 +2708,23 @@ window.capexSubmitRequest = function(){
 window.capexFilterStatus = function(status){
   var all = document.querySelectorAll('#capex-pipeline-list .biz-capex-item');
   all.forEach(function(el){
-    var match = !status || el.dataset.status===status
-      || (status==='declined' && (el.dataset.status==='declined'||el.dataset.status==='rejected'))
-      || (status==='fully-approved' && (el.dataset.status==='fully-approved'||el.dataset.status==='approved'));
+    var ds = el.dataset.status||'';
+    var isActive = ds.indexOf('active:')===0 || ds==='purchasing' || ds==='excom' || ds==='review';
+    var match = !status
+      || ds===status
+      || (status==='declined' && (ds==='declined'||ds==='rejected'))
+      || (status==='fully-approved' && (ds==='fully-approved'||ds==='approved'))
+      || (status==='purchasing' && (ds==='purchasing'||ds==='active:Purchasing'))
+      || (status==='review' && isActive && ds!=='purchasing' && ds!=='active:Purchasing');
     el.style.display = match ? '' : 'none';
   });
 };
 
-function capexRenderPipeline(){
+window.capexRenderPipeline = function capexRenderPipeline(){
+  /* Always reload from localStorage to get latest state */
+  capexRequests = _capexGetRequests();
+  capexMyRole = _capexGetMyRole();
+  capexChain = _capexGetChain();
   var list = document.getElementById('capex-pipeline-list');
   if(!list) return;
   var det=document.getElementById('capex-detail'); if(det) det.style.display='none';
@@ -2710,33 +2737,23 @@ function capexRenderPipeline(){
   if(emp) emp.style.display='none';
   list.innerHTML = '';
   capexRequests.forEach(function(r){
-    var statusMap={
-      purchasing:'biz-status-purchasing',
-      excom:'biz-status-review',
-      review:'biz-status-review',
-      'fully-approved':'biz-status-approved',
-      approved:'biz-status-approved',
-      declined:'biz-status-rejected',
-      rejected:'biz-status-rejected',
-      draft:'biz-status-draft'
-    };
-    var labelMap={
-      purchasing:'With Purchasing',
-      excom:'With EXCOM',
-      review:'In Review',
-      'fully-approved':'Fully Approved',
-      approved:'Approved',
-      declined:'Declined',
-      rejected:'Declined',
-      draft:'Draft'
-    };
-    var statusClass = statusMap[r.status]||'biz-status-draft';
-    var statusLabel = labelMap[r.status]||r.status;
+    /* Handle both old fixed statuses and new 'active:RoleName' pattern */
+    var statusClass = r.status==='fully-approved'?'biz-status-approved':
+                      (r.status==='declined'||r.status==='rejected')?'biz-status-rejected':
+                      r.status==='draft'?'biz-status-draft':
+                      r.status==='purchasing'?'biz-status-purchasing':
+                      'biz-status-review';
+    var statusLabel = r.status==='fully-approved'?'Fully Approved':
+                      (r.status==='declined'||r.status==='rejected')?'Declined':
+                      r.status==='draft'?'Draft':
+                      r.status.indexOf('active:')===0?'With '+r.status.replace('active:',''):
+                      r.status==='purchasing'?'With Purchasing':
+                      'In Review';
     var currentRole = r.status==='fully-approved'?'Complete':
-                      r.status==='declined'?'Declined by '+(r.declinedBy||'—'):
+                      (r.status==='declined'||r.status==='rejected')?'Declined by '+(r.declinedBy||'—'):
                       (r.chain[r.currentStep]?r.chain[r.currentStep].role:'Complete');
     /* Highlight if pending MY role */
-    var isMyTurn = capexMyRole && r.chain[r.currentStep] && r.chain[r.currentStep].role===capexMyRole && r.status!=='declined' && r.status!=='fully-approved';
+    var isMyTurn = capexMyRole && r.chain[r.currentStep] && r.chain[r.currentStep].role===capexMyRole && r.status!=='declined' && r.status!=='rejected' && r.status!=='fully-approved';
     var border = isMyTurn?'border-left:3px solid var(--moss);':'';
     var myBadge = isMyTurn?'<span style="font-family:var(--fm);font-size:.65rem;padding:1px 7px;border-radius:var(--r-pill);background:var(--moss);color:#fff;margin-left:6px">YOUR TURN</span>':'';
     var div=document.createElement('div');
@@ -2750,9 +2767,15 @@ function capexRenderPipeline(){
     div.addEventListener('click',function(){capexOpenDetail(r.id);});
     list.appendChild(div);
   });
+  /* Debug: show count */
+  var dbg = document.getElementById('capex-debug-count');
+  if(dbg) dbg.textContent = '('+capexRequests.length+' in store, role: '+(capexMyRole||'none')+')';
 }
 
 window.capexOpenDetail = function(id){
+  capexRequests = _capexGetRequests();
+  capexMyRole = _capexGetMyRole();
+  capexChain = _capexGetChain();
   var req = capexRequests.find(function(r){return r.id===id;});
   if(!req) return;
   capexCurrentId = id;
@@ -2778,7 +2801,8 @@ window.capexOpenDetail = function(id){
   var chainEl = document.getElementById('capex-d-chain');
   chainEl.innerHTML = '';
 
-  if(req.status==='declined'||req.status==='rejected'){
+  var _isDeclined = req.status==='declined'||req.status==='rejected';
+  if(_isDeclined){
     var decBanner=document.createElement('div');
     decBanner.style.cssText='background:var(--red-pale);border:.5px solid var(--red);border-radius:var(--r);padding:.9rem 1rem;margin-bottom:1rem';
     decBanner.innerHTML='<div style="font-family:var(--fm);font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;color:var(--red);margin-bottom:.4rem">DECLINED</div>'
@@ -2788,7 +2812,7 @@ window.capexOpenDetail = function(id){
     chainEl.appendChild(decBanner);
   }
 
-  if(req.status==='fully-approved'){
+  if(req.status==='fully-approved'||req.status==='approved'){
     var appBanner=document.createElement('div');
     appBanner.style.cssText='background:var(--green-pale);border:.5px solid var(--green);border-radius:var(--r);padding:.75rem 1rem;margin-bottom:1rem;font-family:var(--fm);font-size:.82rem;color:var(--green);letter-spacing:.08em;text-align:center';
     appBanner.textContent='FULLY APPROVED BY ALL PARTIES';
@@ -2803,7 +2827,8 @@ window.capexOpenDetail = function(id){
     var dotClass = isDone?'done':isActive?'active':isDeclined?'biz-status-rejected':'pending';
     var dotIcon = isDone?'&#10003;':isDeclined?'&#10007;':isActive?'&rarr;':(i+1);
     var isMyStep = capexMyRole && s.role===capexMyRole;
-    var canAct = isActive && (req.status!=='fully-approved') && (req.status!=='declined') && (req.status!=='rejected');
+    var notFinal = req.status!=='fully-approved' && req.status!=='declined' && req.status!=='rejected';
+    var canAct = isActive && notFinal;
     /* If my role is set, only I can act on my step */
     if(canAct && capexMyRole && !isMyStep) canAct=false;
 
@@ -2862,10 +2887,8 @@ window.capexOpenDetail = function(id){
 window.capexCloseDetail = function(){
   var _cd=document.getElementById('capex-detail'); if(_cd) _cd.style.display='none';
   var _cl=document.getElementById('capex-pipeline-list'); if(_cl) _cl.style.display='';
-  var _pe=document.getElementById('capex-pipeline-empty');
+  /* Re-render pipeline with fresh data */
   capexRenderPipeline();
-  /* Make sure pipeline tab is active */
-  capexTab('pipeline', document.getElementById('capex-tab-pipeline-btn'));
 };
 
 /* ── NOTIFICATIONS ── */
@@ -2970,6 +2993,9 @@ function capexNotifyAll(req, action, decidedBy, reason, fromStep){
 
 /* ── APPROVE / REJECT ── */
 window.capexApproveStep = function(stepIdx){
+  /* Always work with fresh data from localStorage */
+  capexRequests = _capexGetRequests();
+  capexChain = _capexGetChain();
   var req = capexRequests.find(function(r){return r.id===capexCurrentId;});
   if(!req) return;
   var commentEl = document.getElementById('capex-action-comment-'+stepIdx);
@@ -2988,7 +3014,8 @@ window.capexApproveStep = function(stepIdx){
     capexNotifyAll(req,'approved',decidedBy,comment,stepIdx);
   } else {
     req.chain[req.currentStep].status='active';
-    req.status = stepIdx===0?'purchasing':stepIdx===1?'excom':'review';
+    /* Status = role name of current active step for clarity */
+    req.status = 'active:'+req.chain[req.currentStep].role;
     /* Notify the NEXT step approver */
     var nextStep = capexChain[req.currentStep]||req.chain[req.currentStep];
     var nextEmail = nextStep.email||'';
@@ -2996,14 +3023,18 @@ window.capexApproveStep = function(stepIdx){
     if(nextEmail){
       capexSendEmail(nextName,nextEmail,'Action Required: CAPEX — '+req.itemName,'Request: '+req.itemName+' | Outlet: '+req.outlet+' | Budget: '+Number(req.budget||0).toLocaleString()+' | Approved by: '+decidedBy+' | Please open CAPEX in Cultivate Studio to review.',req.itemName,decidedBy);
     }
-    capexAddNotification('Forwarded to '+req.chain[req.currentStep].role+': '+req.itemName,'info');
+    var _nextRole = req.chain[req.currentStep]?req.chain[req.currentStep].role:'next step';
+    capexAddNotification('Forwarded to '+_nextRole+': '+req.itemName,'info');
   }
 
-  localStorage.setItem('capex_requests',JSON.stringify(capexRequests));
+  _capexSaveRequests(capexRequests);
   capexOpenDetail(capexCurrentId);
 };
 
 window.capexRejectStep = function(stepIdx){
+  /* Always work with fresh data from localStorage */
+  capexRequests = _capexGetRequests();
+  capexChain = _capexGetChain();
   var req = capexRequests.find(function(r){return r.id===capexCurrentId;});
   if(!req) return;
   var commentEl = document.getElementById('capex-action-comment-'+stepIdx);
@@ -3032,7 +3063,7 @@ window.capexRejectStep = function(stepIdx){
   /* Notify all previous submitters */
   capexNotifyAll(req,'rejected',decidedBy,comment,stepIdx);
 
-  localStorage.setItem('capex_requests',JSON.stringify(capexRequests));
+  _capexSaveRequests(capexRequests);
   capexOpenDetail(capexCurrentId);
 };
 
@@ -3056,6 +3087,7 @@ window.capexShowRoleSelect = function(){
 window.capexSetMyRole = function(role){
   capexMyRole = role;
   localStorage.setItem('capex_my_role', role);
+  capexMyRole = role;
   var label = document.getElementById('capex-role-label');
   if(label) label.textContent = role;
   var modal = document.getElementById('capex-role-modal');
@@ -3082,7 +3114,7 @@ window.capexSaveEmailJS = function(){
 };
 
 /* ── CHAIN BUILDER ── */
-function capexRenderChainBuilder(){
+window.capexRenderChainBuilder = function capexRenderChainBuilder(){
   var builder = document.getElementById('capex-chain-builder');
   if(!builder) return;
   builder.innerHTML = '';
@@ -3142,7 +3174,7 @@ window.capexSaveChain = function(){
   capexRenderChainPreview();
 };
 
-function capexRenderChainPreview(){
+window.capexRenderChainPreview = function capexRenderChainPreview(){
   var el=document.getElementById('capex-chain-preview');
   if(!el) return;
   el.innerHTML = capexChain.map(function(s,i){
@@ -3152,10 +3184,10 @@ function capexRenderChainPreview(){
       +(s.email?'<div class="biz-chain-ts">'+s.email+'</div>':'')
       +'</div></div>';
   }).join('');
-}
+};
 
 /* ── INIT ── */
-(function(){
+;(function(){
   /* Load EmailJS keys into fields */
   var keyEl=document.getElementById('capex-ejs-key');
   var svcEl=document.getElementById('capex-ejs-service');
@@ -3714,7 +3746,7 @@ capexRenderNotifications();
   <!-- PIPELINE -->
   <div class="biz-section biz-active" id="capex-pipeline">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
-      <div style="font-family:var(--fm);font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--smoke)">All Requests</div>
+      <div style="font-family:var(--fm);font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--smoke)">All Requests <span id="capex-debug-count" style="font-size:.65rem;color:var(--smoke);font-weight:300"></span></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="biz-btn-g" style="font-size:.72rem;padding:.3rem .75rem" onclick="capexFilterStatus('')">All</button>
         <button class="biz-btn-g" style="font-size:.72rem;padding:.3rem .75rem" onclick="capexFilterStatus('purchasing')">Purchasing</button>
@@ -14878,7 +14910,7 @@ function closeMobSidebar() {
 // ── SERVICE WORKER (PWA offline) ───────────────────────────
 if ('serviceWorker' in navigator) {
   var swCode = `
-const CACHE = 'cultivate-v1';
+const CACHE = 'cultivate-v2';
 const FONTS = [
   'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Jost:wght@300;400;500&family=DM+Mono:wght@300;400&display=swap'
 ];
