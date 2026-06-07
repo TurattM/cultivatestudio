@@ -2894,12 +2894,11 @@ window.capexToggleNotifications = function(){
   if(!panel) return;
   var visible = panel.style.display!=='none';
   panel.style.display = visible?'none':'block';
-  if(!visible){
-    capexNotifications.forEach(function(n){n.read=true;});
-    localStorage.setItem('capex_notifications',JSON.stringify(capexNotifications));
-    capexUpdateNotifBadge();
-    capexRenderNotifications();
-  }
+  capexNotifications.forEach(function(n){n.read=true;});
+  localStorage.setItem('capex_notifications',JSON.stringify(capexNotifications));
+  capexUpdateNotifBadge();
+  capexRenderNotifications();
+  if(visible) setTimeout(capexRenderPipeline, 50);
 };
 
 window.capexClearNotifications = function(){
@@ -3061,7 +3060,12 @@ window.capexSetMyRole = function(role){
   if(label) label.textContent = role;
   var modal = document.getElementById('capex-role-modal');
   if(modal) modal.style.display='none';
-  capexRenderPipeline();
+  /* Close notification panel if open */
+  var notifPanel = document.getElementById('capex-notif-panel');
+  if(notifPanel) notifPanel.style.display='none';
+  /* Force pipeline tab active and re-render */
+  capexTab('pipeline', document.getElementById('capex-tab-pipeline-btn'));
+  setTimeout(capexRenderPipeline, 50);
 };
 
 /* ── EMAILJS SETTINGS ── */
@@ -3869,7 +3873,7 @@ function capexAutoOutlet(){
 }
 window.capexOutletRefresh=capexAutoOutlet;
 var _origSP=window.showPage;
-window.showPage=function(id){ if(_origSP)_origSP(id); if(id==='capex')setTimeout(capexAutoOutlet,80); };
+window.showPage=function(id){ if(_origSP)_origSP(id); if(id==='capex'){setTimeout(capexAutoOutlet,80);setTimeout(capexRenderPipeline,100);capexUpdateNotifBadge();} };
 setTimeout(capexAutoOutlet,200);
 })();
 </script>
