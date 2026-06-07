@@ -2406,15 +2406,19 @@ var bizData = null;
 var bizCharts = {};
 var capexRequests = JSON.parse(localStorage.getItem('capex_requests')||'[]');
 var capexChain = JSON.parse(localStorage.getItem('capex_chain')||'null') || [
-  {role:'Chef de Cuisine',name:''},
-  {role:'Purchasing Team',name:''},
-  {role:'Executive Chef',name:''},
-  {role:'F&B Manager',name:''},
-  {role:'Finance Director',name:''},
-  {role:'Hotel Manager',name:''},
-  {role:'General Manager',name:''},
-  {role:'Owner Representative',name:''}
+  {role:'Outlet',name:'',email:''},
+  {role:'Purchasing',name:'',email:''},
+  {role:'EXCOM',name:'',email:''},
+  {role:'Director of Finance',name:'',email:''},
+  {role:'Hotel Manager',name:'',email:''},
+  {role:'General Manager',name:'',email:''},
+  {role:'Owning Company',name:'',email:''}
 ];
+var capexMyRole = localStorage.getItem('capex_my_role')||'';
+var capexNotifications = JSON.parse(localStorage.getItem('capex_notifications')||'[]');
+var capexEmailJSKey = localStorage.getItem('capex_emailjs_key')||'';
+var capexEmailJSTemplate = localStorage.getItem('capex_emailjs_template')||'';
+var capexEmailJSService = localStorage.getItem('capex_emailjs_service')||'';
 var capexCurrentId = null;
 
 /* ── TAB SWITCHING ── */
@@ -2429,7 +2433,8 @@ window.bizTab = bizTab;
 
 function capexTab(id, btn){
   document.querySelectorAll('#capex-tab-pipeline-btn,#capex-tab-new-btn,#capex-tab-settings-btn').forEach(function(b){b.classList.remove('biz-active')});
-  document.querySelectorAll('#biz-capex > .biz-section').forEach(function(s){s.classList.remove('biz-active')});
+  /* CAPEX is now page-capex — sections are direct children of that page */
+  document.querySelectorAll('#page-capex > .biz-section, #page-capex .biz-section').forEach(function(s){s.classList.remove('biz-active')});
   var sec = document.getElementById('capex-'+id);
   if(sec){ sec.classList.add('biz-active'); }
   if(btn){ btn.classList.add('biz-active'); }
@@ -2685,7 +2690,10 @@ window.capexSubmitRequest = function(){
 window.capexFilterStatus = function(status){
   var all = document.querySelectorAll('#capex-pipeline-list .biz-capex-item');
   all.forEach(function(el){
-    el.style.display = (!status || el.dataset.status===status) ? '' : 'none';
+    var match = !status || el.dataset.status===status
+      || (status==='declined' && (el.dataset.status==='declined'||el.dataset.status==='rejected'))
+      || (status==='fully-approved' && (el.dataset.status==='fully-approved'||el.dataset.status==='approved'));
+    el.style.display = match ? '' : 'none';
   });
 };
 
@@ -2700,12 +2708,48 @@ function capexRenderPipeline(){
     return;
   }
   if(emp) emp.style.display='none';
-  list.innerHTML = capexRequests.map(function(r){
-    var statusClass = {purchasing:'biz-status-purchasing',review:'biz-status-review',approved:'biz-status-approved',rejected:'biz-status-rejected',draft:'biz-status-draft'}[r.status]||'biz-status-draft';
-    var statusLabel = {purchasing:'Purchasing',review:'In Review',approved:'Approved',rejected:'Rejected',draft:'Draft'}[r.status]||r.status;
-    var currentRole = r.chain[r.currentStep]?r.chain[r.currentStep].role:'Complete';
-    return '<div class="biz-capex-item" data-status="'+r.status+'" data-id="'+r.id+'" onclick="capexOpenDetail(\''+r.id+'\')"><div class="biz-capex-item-header"><div><div class="biz-capex-item-title">'+r.itemName+'</div><div class="biz-capex-item-outlet">'+r.outlet+' · '+r.category+'</div></div><span class="biz-capex-status '+statusClass+'">'+statusLabel+'</span></div><div style="display:flex;justify-content:space-between;font-family:var(--fm);font-size:.7rem;color:var(--smoke)"><span>'+r.created+'</span><span>Pending: '+currentRole+'</span></div></div>';
-  }).join('');
+  list.innerHTML = '';
+  capexRequests.forEach(function(r){
+    var statusMap={
+      purchasing:'biz-status-purchasing',
+      excom:'biz-status-review',
+      review:'biz-status-review',
+      'fully-approved':'biz-status-approved',
+      approved:'biz-status-approved',
+      declined:'biz-status-rejected',
+      rejected:'biz-status-rejected',
+      draft:'biz-status-draft'
+    };
+    var labelMap={
+      purchasing:'With Purchasing',
+      excom:'With EXCOM',
+      review:'In Review',
+      'fully-approved':'Fully Approved',
+      approved:'Approved',
+      declined:'Declined',
+      rejected:'Declined',
+      draft:'Draft'
+    };
+    var statusClass = statusMap[r.status]||'biz-status-draft';
+    var statusLabel = labelMap[r.status]||r.status;
+    var currentRole = r.status==='fully-approved'?'Complete':
+                      r.status==='declined'?'Declined by '+(r.declinedBy||'—'):
+                      (r.chain[r.currentStep]?r.chain[r.currentStep].role:'Complete');
+    /* Highlight if pending MY role */
+    var isMyTurn = capexMyRole && r.chain[r.currentStep] && r.chain[r.currentStep].role===capexMyRole && r.status!=='declined' && r.status!=='fully-approved';
+    var border = isMyTurn?'border-left:3px solid var(--moss);':'';
+    var myBadge = isMyTurn?'<span style="font-family:var(--fm);font-size:.65rem;padding:1px 7px;border-radius:var(--r-pill);background:var(--moss);color:#fff;margin-left:6px">YOUR TURN</span>':'';
+    var div=document.createElement('div');
+    div.className='biz-capex-item';
+    div.dataset.status=r.status;
+    div.dataset.id=r.id;
+    div.style.cssText=border;
+    div.innerHTML='<div class="biz-capex-item-header"><div><div class="biz-capex-item-title">'+r.itemName+myBadge+'</div><div class="biz-capex-item-outlet">'+r.outlet+' · '+r.category+'</div></div><span class="biz-capex-status '+statusClass+'">'+statusLabel+'</span></div>'
+      +(r.status==='declined'?'<div style="font-size:.78rem;color:var(--red);margin-top:.3rem;font-family:var(--fm)">Declined by '+( r.declinedBy||'—')+': '+(r.declineReason||'')+'</div>':'')
+      +'<div style="display:flex;justify-content:space-between;font-family:var(--fm);font-size:.7rem;color:var(--smoke);margin-top:.25rem"><span>'+r.created+'</span><span>'+currentRole+'</span></div>';
+    div.addEventListener('click',function(){capexOpenDetail(r.id);});
+    list.appendChild(div);
+  });
 }
 
 window.capexOpenDetail = function(id){
@@ -2714,80 +2758,367 @@ window.capexOpenDetail = function(id){
   capexCurrentId = id;
   var _pl=document.getElementById('capex-pipeline-list'); if(_pl) _pl.style.display='none';
   var _pe=document.getElementById('capex-pipeline-empty'); if(_pe) _pe.style.display='none';
-  var det = document.getElementById('capex-detail');
+  var det=document.getElementById('capex-detail'); if(!det) return;
   det.style.display='block';
+
   document.getElementById('capex-detail-title').textContent=req.itemName;
   document.getElementById('capex-d-outlet').textContent=req.outlet;
   document.getElementById('capex-d-category').textContent=req.category;
   document.getElementById('capex-d-amount').textContent=req.budget?Number(req.budget).toLocaleString()+' (est.)':'—';
   document.getElementById('capex-d-justification').innerHTML='<strong>Justification:</strong> '+req.justification+(req.specs?'<br><br><strong>Specs:</strong> '+req.specs:'');
-  document.getElementById('capex-d-quotes').innerHTML = req.quotes.length ? req.quotes.map(function(q,i){
-    return '<div class="biz-quote-card"><div class="biz-quote-num">Quote '+(i+1)+'</div><div style="font-weight:500;font-size:.9rem;margin-bottom:.3rem">'+q.vendor+'</div><div style="font-family:var(--fm);font-size:.78rem;color:var(--terracotta);margin-bottom:.25rem">'+Number(q.amount||0).toLocaleString()+(q.leadTime?' · '+q.leadTime:'')+'</div><div style="font-size:.8rem;color:var(--smoke)">'+( q.notes||'—')+'</div></div>';
+
+  document.getElementById('capex-d-quotes').innerHTML = req.quotes&&req.quotes.length ? req.quotes.map(function(q,qi){
+    return '<div class="biz-quote-card"><div class="biz-quote-num">Quote '+(qi+1)+'</div>'
+      +'<div style="font-weight:500;font-size:.9rem;margin-bottom:.3rem">'+q.vendor+'</div>'
+      +'<div style="font-family:var(--fm);font-size:.78rem;color:var(--terracotta);margin-bottom:.25rem">'+Number(q.amount||0).toLocaleString()+(q.leadTime?' · '+q.leadTime:'')+'</div>'
+      +'<div style="font-size:.8rem;color:var(--smoke)">'+(q.notes||'—')+'</div></div>';
   }).join('') : '<div style="color:var(--smoke);font-size:.84rem">No quotes uploaded yet.</div>';
-  document.getElementById('capex-d-chain').innerHTML = req.chain.map(function(s,i){
-    var dotClass = s.status==='done'?'done':s.status==='active'?'active':'pending';
-    return '<div class="biz-chain-step"><div class="biz-chain-dot '+dotClass+'">'+(s.status==='done'?'✓':s.status==='active'?'→':(i+1))+'</div><div class="biz-chain-info"><div class="biz-chain-role">'+s.role+'</div>'+(s.name?'<div class="biz-chain-name">'+s.name+'</div>':'')+(s.comment?'<div class="biz-chain-comment">"'+s.comment+'"</div>':'')+(s.timestamp?'<div class="biz-chain-ts">'+s.timestamp+'</div>':'')+'</div></div>';
-  }).join('');
-  var actionCard = document.getElementById('capex-action-card');
-  if(actionCard){
-    if(req.status!=='approved'&&req.status!=='rejected'){ actionCard.style.display='block'; }
-    else{ actionCard.style.display='none'; }
+
+  /* ── DECLINE BANNER ── */
+  var chainEl = document.getElementById('capex-d-chain');
+  chainEl.innerHTML = '';
+
+  if(req.status==='declined'||req.status==='rejected'){
+    var decBanner=document.createElement('div');
+    decBanner.style.cssText='background:var(--red-pale);border:.5px solid var(--red);border-radius:var(--r);padding:.9rem 1rem;margin-bottom:1rem';
+    decBanner.innerHTML='<div style="font-family:var(--fm);font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;color:var(--red);margin-bottom:.4rem">DECLINED</div>'
+      +'<div style="font-size:.9rem;color:var(--t1);margin-bottom:.25rem"><strong>Declined by:</strong> '+(req.declinedBy||'—')+'</div>'
+      +'<div style="font-size:.88rem;color:var(--t2)"><strong>Reason:</strong> '+(req.declineReason||'No reason provided')+'</div>'
+      +(req.declinedAt?'<div style="font-family:var(--fm);font-size:.7rem;color:var(--smoke);margin-top:.3rem">'+req.declinedAt+'</div>':'');
+    chainEl.appendChild(decBanner);
   }
+
+  if(req.status==='fully-approved'){
+    var appBanner=document.createElement('div');
+    appBanner.style.cssText='background:var(--green-pale);border:.5px solid var(--green);border-radius:var(--r);padding:.75rem 1rem;margin-bottom:1rem;font-family:var(--fm);font-size:.82rem;color:var(--green);letter-spacing:.08em;text-align:center';
+    appBanner.textContent='FULLY APPROVED BY ALL PARTIES';
+    chainEl.appendChild(appBanner);
+  }
+
+  /* ── SEQUENTIAL CHAIN RENDER ── */
+  req.chain.forEach(function(s,i){
+    var isActive = s.status==='active';
+    var isDone = s.status==='done';
+    var isDeclined = s.status==='declined';
+    var dotClass = isDone?'done':isActive?'active':isDeclined?'biz-status-rejected':'pending';
+    var dotIcon = isDone?'&#10003;':isDeclined?'&#10007;':isActive?'&rarr;':(i+1);
+    var isMyStep = capexMyRole && s.role===capexMyRole;
+    var canAct = isActive && (req.status!=='fully-approved') && (req.status!=='declined') && (req.status!=='rejected');
+    /* If my role is set, only I can act on my step */
+    if(canAct && capexMyRole && !isMyStep) canAct=false;
+
+    var stepEl = document.createElement('div');
+    stepEl.className='biz-chain-step';
+    stepEl.style.cssText = isActive
+      ? (canAct?'background:var(--moss-pale);border:.5px solid var(--moss-lt)':'background:var(--surface3);border:.5px solid var(--border)')
+        +';border-radius:var(--r);padding:.75rem 1rem;margin-bottom:.5rem'
+      : isDeclined
+        ? 'background:var(--red-pale);border:.5px solid var(--red);border-radius:var(--r);padding:.65rem 1rem;margin-bottom:.5rem'
+        : 'padding:.4rem 0';
+
+    var html = '<div class="biz-chain-dot '+(isDone?'done':isActive?'active':'pending')+'">'+dotIcon+'</div>'
+      +'<div class="biz-chain-info" style="flex:1">'
+      +'<div class="biz-chain-role" style="'+(canAct?'color:var(--moss);font-weight:500':isDeclined?'color:var(--red)':'')+'">'+s.role
+      +(canAct?' <span style="font-family:var(--fm);font-size:.65rem;padding:1px 7px;border-radius:var(--r-pill);background:var(--moss);color:#fff;vertical-align:middle">AWAITING YOUR ACTION</span>':'')
+      +(isActive&&!canAct&&capexMyRole?' <span style="font-family:var(--fm);font-size:.65rem;padding:1px 7px;border-radius:var(--r-pill);background:var(--amber);color:#fff;vertical-align:middle">AWAITING ACTION</span>':'')
+      +'</div>'
+      +(s.name?'<div class="biz-chain-name">'+s.name+'</div>':'')
+      +(s.comment?'<div class="biz-chain-comment" style="margin-top:.3rem;">"'+s.comment+'"</div>':'')
+      +(s.timestamp?'<div class="biz-chain-ts">'+s.timestamp+'</div>':'');
+
+    /* Action buttons — only if this is the active step AND its my turn (or no role set) */
+    if(canAct){
+      var nextRole = req.chain[i+1] ? req.chain[i+1].role : null;
+      var isLastStep = (i === req.chain.length-1);
+      html += '<div style="margin-top:.75rem">'
+        +'<div style="margin-bottom:.5rem">'
+        +'<label style="font-family:var(--fm);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--smoke);display:block;margin-bottom:.25rem">Comment '+(isLastStep?'(optional)':'(optional — required if declining)')+'</label>'
+        +'<textarea id="capex-action-comment-'+i+'" rows="2" placeholder="Notes, conditions, reasons..." '
+        +'style="width:100%;background:var(--bg-input);border:.5px solid var(--border-strong);border-radius:var(--r-sm);padding:.4rem .6rem;font-family:var(--fb);font-size:.88rem;color:var(--t1);box-sizing:border-box"></textarea>'
+        +'</div>'
+        +'<div style="display:flex;gap:.5rem;flex-wrap:wrap">'
+        +'<button class="biz-btn-p" onclick="capexApproveStep('+i+')" style="flex:1">'
+        +(isLastStep?'Final Approve — Complete':'Approve &amp; Send to '+(nextRole||'Next Step'))
+        +'</button>'
+        +'<button onclick="capexRejectStep('+i+')" style="background:transparent;color:var(--red);border:.5px solid var(--red);border-radius:var(--r-sm);padding:.5rem 1rem;font-family:var(--fm);font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;cursor:pointer">Decline &amp; Return All</button>'
+        +'</div></div>';
+    }
+
+    html += '</div>';
+    stepEl.innerHTML = html;
+    chainEl.appendChild(stepEl);
+
+    if(i < req.chain.length-1){
+      var line=document.createElement('div');
+      line.style.cssText='width:1px;height:14px;background:var(--border-strong);margin-left:15px';
+      chainEl.appendChild(line);
+    }
+  });
+
+  var oldCard=document.getElementById('capex-action-card');
+  if(oldCard) oldCard.style.display='none';
 };
 
 window.capexCloseDetail = function(){
   var _cd=document.getElementById('capex-detail'); if(_cd) _cd.style.display='none';
   var _cl=document.getElementById('capex-pipeline-list'); if(_cl) _cl.style.display='';
+  var _pe=document.getElementById('capex-pipeline-empty');
+  capexRenderPipeline();
+  /* Make sure pipeline tab is active */
+  capexTab('pipeline', document.getElementById('capex-tab-pipeline-btn'));
+};
+
+/* ── NOTIFICATIONS ── */
+function capexAddNotification(msg, type){
+  type = type||'info';
+  capexNotifications.unshift({msg:msg,type:type,ts:new Date().toLocaleString(),read:false});
+  localStorage.setItem('capex_notifications',JSON.stringify(capexNotifications));
+  capexUpdateNotifBadge();
+}
+
+function capexUpdateNotifBadge(){
+  var unread = capexNotifications.filter(function(n){return !n.read;}).length;
+  var badge = document.getElementById('capex-notif-badge');
+  if(badge){
+    if(unread>0){
+      badge.textContent=unread;
+      badge.style.display='flex';
+    } else {
+      badge.style.display='none';
+    }
+  }
+}
+
+window.capexToggleNotifications = function(){
+  var panel = document.getElementById('capex-notif-panel');
+  if(!panel) return;
+  var visible = panel.style.display!=='none';
+  panel.style.display = visible?'none':'block';
+  if(!visible){
+    capexNotifications.forEach(function(n){n.read=true;});
+    localStorage.setItem('capex_notifications',JSON.stringify(capexNotifications));
+    capexUpdateNotifBadge();
+    capexRenderNotifications();
+  }
+};
+
+window.capexClearNotifications = function(){
+  capexNotifications=[];
+  localStorage.setItem('capex_notifications','[]');
+  capexRenderNotifications();
+  capexUpdateNotifBadge();
+};
+
+function capexRenderNotifications(){
+  var el = document.getElementById('capex-notif-list');
+  if(!el) return;
+  if(!capexNotifications.length){
+    el.innerHTML='<div style="color:var(--smoke);font-size:.84rem;text-align:center;padding:.5rem">No notifications</div>';
+    return;
+  }
+  el.innerHTML = capexNotifications.map(function(n){
+    var color = n.type==='approved'?'var(--green)':n.type==='rejected'?'var(--red)':'var(--moss)';
+    return '<div style="padding:.5rem 0;border-bottom:.5px solid var(--border);font-size:.84rem;line-height:1.5">'
+      +'<div style="display:flex;gap:6px;align-items:flex-start">'
+      +'<span style="width:7px;height:7px;border-radius:50%;background:'+color+';flex-shrink:0;margin-top:5px"></span>'
+      +'<div><div style="color:var(--t1)">'+n.msg+'</div>'
+      +'<div style="font-family:var(--fm);font-size:.68rem;color:var(--smoke);margin-top:2px">'+n.ts+'</div></div>'
+      +'</div></div>';
+  }).join('');
+}
+
+/* ── EMAIL (EmailJS) ── */
+function capexLoadEmailJS(cb){
+  if(window.emailjs){ cb(); return; }
+  var s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
+  s.onload=function(){ if(capexEmailJSKey) window.emailjs.init(capexEmailJSKey); cb(); };
+  document.head.appendChild(s);
+}
+
+function capexSendEmail(toName, toEmail, subject, message, requestName, decidedBy){
+  if(!capexEmailJSKey||!capexEmailJSService||!capexEmailJSTemplate){ return; }
+  capexLoadEmailJS(function(){
+    window.emailjs.send(capexEmailJSService, capexEmailJSTemplate, {
+      to_name: toName,
+      to_email: toEmail,
+      subject: subject,
+      message: message,
+      request_name: requestName,
+      decided_by: decidedBy
+    }).catch(function(err){ console.warn('EmailJS error:',err); });
+  });
+}
+
+function capexNotifyAll(req, action, decidedBy, reason, fromStep){
+  var statusWord = action==='approved'?'Approved':'Declined';
+  var subject = 'CAPEX '+statusWord+': '+req.itemName;
+  var message = action==='approved' ? req.itemName+' has been approved by '+decidedBy+' and forwarded to the next step.' : req.itemName+' has been declined by '+decidedBy+'. Reason: '+(reason||'No reason provided')+'. The request has been returned to all previous submitters for review.';
+
+  /* In-app notification for everyone */
+  capexAddNotification(statusWord+' by '+decidedBy+': '+req.itemName+(reason?' — '+reason:''), action==='approved'?'approved':'rejected');
+
+  /* Email all steps up to and including the fromStep */
+  for(var i=0; i<=fromStep; i++){
+    var step = req.chain[i];
+    var email = step.email || (capexChain[i]&&capexChain[i].email) || '';
+    var name = step.name || (capexChain[i]&&capexChain[i].name) || step.role;
+    if(email){
+      capexSendEmail(name, email, subject, message, req.itemName, decidedBy);
+    }
+  }
+}
+
+/* ── APPROVE / REJECT ── */
+window.capexApproveStep = function(stepIdx){
+  var req = capexRequests.find(function(r){return r.id===capexCurrentId;});
+  if(!req) return;
+  var commentEl = document.getElementById('capex-action-comment-'+stepIdx);
+  var comment = commentEl ? commentEl.value.trim() : '';
+  var decidedBy = req.chain[stepIdx].role + (req.chain[stepIdx].name?' ('+req.chain[stepIdx].name+')':'');
+
+  req.chain[stepIdx].status='done';
+  req.chain[stepIdx].comment=comment||'Approved';
+  req.chain[stepIdx].timestamp=new Date().toLocaleString();
+  req.chain[stepIdx].decidedBy=decidedBy;
+
+  req.currentStep = stepIdx+1;
+
+  if(req.currentStep >= req.chain.length){
+    req.status='fully-approved';
+    capexNotifyAll(req,'approved',decidedBy,comment,stepIdx);
+  } else {
+    req.chain[req.currentStep].status='active';
+    req.status = stepIdx===0?'purchasing':stepIdx===1?'excom':'review';
+    /* Notify the NEXT step approver */
+    var nextStep = capexChain[req.currentStep]||req.chain[req.currentStep];
+    var nextEmail = nextStep.email||'';
+    var nextName = nextStep.name||nextStep.role||'';
+    if(nextEmail){
+      capexSendEmail(nextName,nextEmail,'Action Required: CAPEX — '+req.itemName,'Request: '+req.itemName+' | Outlet: '+req.outlet+' | Budget: '+Number(req.budget||0).toLocaleString()+' | Approved by: '+decidedBy+' | Please open CAPEX in Cultivate Studio to review.',req.itemName,decidedBy);
+    }
+    capexAddNotification('Forwarded to '+req.chain[req.currentStep].role+': '+req.itemName,'info');
+  }
+
+  localStorage.setItem('capex_requests',JSON.stringify(capexRequests));
+  capexOpenDetail(capexCurrentId);
+};
+
+window.capexRejectStep = function(stepIdx){
+  var req = capexRequests.find(function(r){return r.id===capexCurrentId;});
+  if(!req) return;
+  var commentEl = document.getElementById('capex-action-comment-'+stepIdx);
+  var comment = commentEl ? commentEl.value.trim() : '';
+  if(!comment){ alert('Please provide a reason for declining before submitting.'); return; }
+
+  var decidedBy = req.chain[stepIdx].role + (req.chain[stepIdx].name?' ('+req.chain[stepIdx].name+')':'');
+
+  /* Mark this step as declined */
+  req.chain[stepIdx].status='declined';
+  req.chain[stepIdx].comment=comment;
+  req.chain[stepIdx].timestamp=new Date().toLocaleString();
+  req.chain[stepIdx].decidedBy=decidedBy;
+
+  /* Reset all previous steps to show the decline trail */
+  for(var i=0; i<stepIdx; i++){
+    req.chain[i].declineReason = comment;
+    req.chain[i].declinedBy = decidedBy;
+  }
+
+  req.status='declined';
+  req.declinedBy = decidedBy;
+  req.declineReason = comment;
+  req.declinedAt = new Date().toLocaleString();
+
+  /* Notify all previous submitters */
+  capexNotifyAll(req,'rejected',decidedBy,comment,stepIdx);
+
+  localStorage.setItem('capex_requests',JSON.stringify(capexRequests));
+  capexOpenDetail(capexCurrentId);
+};
+
+/* ── ROLE SELECTOR ── */
+window.capexShowRoleSelect = function(){
+  var modal = document.getElementById('capex-role-modal');
+  if(!modal) return;
+  var opts = document.getElementById('capex-role-options');
+  opts.innerHTML = '';
+  capexChain.forEach(function(s,i){
+    var active = capexMyRole===s.role;
+    var btn = document.createElement('button');
+    btn.style.cssText = 'text-align:left;padding:.5rem .75rem;border-radius:var(--r-sm);border:.5px solid '+(active?'var(--moss)':'var(--border)')+';background:'+(active?'var(--moss-pale)':'var(--surface3)')+';color:'+(active?'var(--moss)':'var(--t2)')+';font-family:var(--fb);font-size:.88rem;cursor:pointer;display:block;width:100%;margin-bottom:4px';
+    btn.innerHTML = (i+1)+'. '+s.role+(s.name?' <span style="color:var(--smoke);font-size:.82rem">'+s.name+'</span>':'');
+    btn.addEventListener('click',function(){ capexSetMyRole(s.role); });
+    opts.appendChild(btn);
+  });
+  modal.style.display='block';
+};
+
+window.capexSetMyRole = function(role){
+  capexMyRole = role;
+  localStorage.setItem('capex_my_role', role);
+  var label = document.getElementById('capex-role-label');
+  if(label) label.textContent = role;
+  var modal = document.getElementById('capex-role-modal');
+  if(modal) modal.style.display='none';
   capexRenderPipeline();
 };
 
-window.capexApproveStep = function(){
-  var req = capexRequests.find(function(r){return r.id===capexCurrentId;});
-  if(!req) return;
-  var comment = document.getElementById('capex-action-comment').value.trim();
-  req.chain[req.currentStep].status='done';
-  req.chain[req.currentStep].comment=comment;
-  req.chain[req.currentStep].timestamp=new Date().toLocaleString();
-  req.currentStep++;
-  if(req.currentStep>=req.chain.length){
-    req.status='approved';
-  } else {
-    req.chain[req.currentStep].status='active';
-    req.status='review';
-  }
-  localStorage.setItem('capex_requests',JSON.stringify(capexRequests));
-  capexOpenDetail(capexCurrentId);
-};
-
-window.capexRejectStep = function(){
-  var req = capexRequests.find(function(r){return r.id===capexCurrentId;});
-  if(!req) return;
-  var comment = document.getElementById('capex-action-comment').value.trim();
-  req.chain[req.currentStep].status='done';
-  req.chain[req.currentStep].comment=comment||'Rejected';
-  req.chain[req.currentStep].timestamp=new Date().toLocaleString();
-  req.status='rejected';
-  if(req.currentStep>0){
-    req.currentStep--;
-    req.chain[req.currentStep].status='active';
-  }
-  localStorage.setItem('capex_requests',JSON.stringify(capexRequests));
-  capexOpenDetail(capexCurrentId);
+/* ── EMAILJS SETTINGS ── */
+window.capexSaveEmailJS = function(){
+  capexEmailJSKey = document.getElementById('capex-ejs-key').value.trim();
+  capexEmailJSService = document.getElementById('capex-ejs-service').value.trim();
+  capexEmailJSTemplate = document.getElementById('capex-ejs-template').value.trim();
+  localStorage.setItem('capex_emailjs_key', capexEmailJSKey);
+  localStorage.setItem('capex_emailjs_service', capexEmailJSService);
+  localStorage.setItem('capex_emailjs_template', capexEmailJSTemplate);
+  if(capexEmailJSKey) capexLoadEmailJS(function(){});
+  var btn = document.querySelector('#capex-settings .biz-btn-p');
+  if(btn){ btn.textContent='Saved OK'; setTimeout(function(){btn.textContent='Save Email Settings';},2000); }
 };
 
 /* ── CHAIN BUILDER ── */
 function capexRenderChainBuilder(){
   var builder = document.getElementById('capex-chain-builder');
-  builder.innerHTML = capexChain.map(function(s,i){
-    return '<div class="biz-chain-builder-step" data-index="'+i+'"><span class="biz-chain-builder-num">'+(i+1)+'</span><input value="'+s.role+'" placeholder="Role title" onchange="capexChainStepChange('+i+',this.value)"><button onclick="capexRemoveChainStep('+i+')" title="Remove">×</button></div>';
-  }).join('');
+  if(!builder) return;
+  builder.innerHTML = '';
+  capexChain.forEach(function(s,i){
+    var row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr 36px;gap:6px;padding:.4rem 0;border-bottom:.5px solid var(--border);align-items:center';
+    var inp1 = document.createElement('input');
+    inp1.value = s.role||'';
+    inp1.placeholder = 'Role (e.g. EXCOM)';
+    inp1.style.cssText = 'background:var(--bg-input);border:.5px solid var(--border);border-radius:var(--r-sm);padding:.3rem .5rem;font-size:.84rem;color:var(--t1);font-family:var(--fb);width:100%;box-sizing:border-box';
+    inp1.addEventListener('change',function(){ capexChainFieldChange(i,'role',this.value); });
+    var inp2 = document.createElement('input');
+    inp2.value = s.name||'';
+    inp2.placeholder = 'Name';
+    inp2.style.cssText = inp1.style.cssText;
+    inp2.addEventListener('change',function(){ capexChainFieldChange(i,'name',this.value); });
+    var inp3 = document.createElement('input');
+    inp3.value = s.email||'';
+    inp3.placeholder = 'email@hotel.com';
+    inp3.style.cssText = 'background:var(--bg-input);border:.5px solid var(--border);border-radius:var(--r-sm);padding:.3rem .5rem;font-size:.84rem;color:var(--t1);font-family:var(--fm);width:100%;box-sizing:border-box';
+    inp3.addEventListener('change',function(){ capexChainFieldChange(i,'email',this.value); });
+    var btn = document.createElement('button');
+    btn.innerHTML = '&times;';
+    btn.style.cssText = 'background:none;border:none;color:var(--smoke);cursor:pointer;font-size:1.1rem;line-height:1';
+    btn.addEventListener('click',function(){ capexRemoveChainStep(i); });
+    row.appendChild(inp1); row.appendChild(inp2); row.appendChild(inp3); row.appendChild(btn);
+    builder.appendChild(row);
+  });
   capexRenderChainPreview();
 }
 
+window.capexChainFieldChange = function(i,field,val){
+  if(!capexChain[i]) return;
+  capexChain[i][field]=val;
+  if(field==='role') capexRenderChainPreview();
+};
 window.capexChainStepChange = function(i,val){ capexChain[i].role=val; capexRenderChainPreview(); };
 
 window.capexAddChainStep = function(){
-  capexChain.push({role:'',name:''});
+  capexChain.push({role:'',name:'',email:''});
   capexRenderChainBuilder();
 };
 
@@ -2799,21 +3130,45 @@ window.capexRemoveChainStep = function(i){
 
 window.capexSaveChain = function(){
   localStorage.setItem('capex_chain',JSON.stringify(capexChain));
-  var btn = document.querySelector('#capex-settings .biz-btn-p');
-  if(btn){ btn.textContent='Saved OK'; setTimeout(function(){ btn.textContent='Save Chain'; },2000); }
+  /* Update role badge if current role still in chain */
+  var found = capexChain.find(function(s){return s.role===capexMyRole;});
+  if(!found){ capexMyRole=''; localStorage.removeItem('capex_my_role'); }
+  var btn = document.querySelectorAll('#capex-settings .biz-btn-p')[1];
+  if(btn){ btn.textContent='Saved OK'; setTimeout(function(){btn.textContent='Save Chain';},2000); }
+  capexRenderChainPreview();
 };
 
 function capexRenderChainPreview(){
   var el=document.getElementById('capex-chain-preview');
   if(!el) return;
   el.innerHTML = capexChain.map(function(s,i){
-    return '<div class="biz-chain-step"><div class="biz-chain-dot pending">'+(i+1)+'</div><div class="biz-chain-info"><div class="biz-chain-role">'+(s.role||'—')+'</div></div></div>';
+    return '<div class="biz-chain-step"><div class="biz-chain-dot pending">'+(i+1)+'</div>'
+      +'<div class="biz-chain-info"><div class="biz-chain-role">'+(s.role||'—')+'</div>'
+      +(s.name?'<div class="biz-chain-name">'+s.name+'</div>':'')
+      +(s.email?'<div class="biz-chain-ts">'+s.email+'</div>':'')
+      +'</div></div>';
   }).join('');
 }
 
 /* ── INIT ── */
+(function(){
+  /* Load EmailJS keys into fields */
+  var keyEl=document.getElementById('capex-ejs-key');
+  var svcEl=document.getElementById('capex-ejs-service');
+  var tplEl=document.getElementById('capex-ejs-template');
+  if(keyEl) keyEl.value=capexEmailJSKey;
+  if(svcEl) svcEl.value=capexEmailJSService;
+  if(tplEl) tplEl.value=capexEmailJSTemplate;
+  /* Role badge */
+  var lbl=document.getElementById('capex-role-label');
+  if(lbl&&capexMyRole) lbl.textContent=capexMyRole;
+  /* Init EmailJS if key present */
+  if(capexEmailJSKey) capexLoadEmailJS(function(){});
+})();
 capexRenderPipeline();
 capexRenderChainPreview();
+capexUpdateNotifBadge();
+capexRenderNotifications();
 
 })();
 </script>
@@ -3317,7 +3672,34 @@ capexRenderChainPreview();
 
 
 <div class="page" id="page-capex">
-  <div class="ph"><div><div class="pt">CAPEX</div><div class="ps">Capital Expenditure · Approval Workflow · Pipeline</div></div></div>
+  <div class="ph">
+    <div style="flex:1"><div class="pt">CAPEX</div><div class="ps">Capital Expenditure · Approval Workflow · Pipeline</div></div>
+    <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <div id="capex-role-badge" style="font-family:var(--fm);font-size:.72rem;padding:.3rem .75rem;border-radius:var(--r-pill);background:var(--moss-pale);color:var(--moss);letter-spacing:.08em;cursor:pointer" onclick="capexShowRoleSelect()">
+        <span id="capex-role-label">Set My Role</span>
+      </div>
+      <div id="capex-notif-btn" onclick="capexToggleNotifications()" style="position:relative;cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--surface3)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        <span id="capex-notif-badge" style="display:none;position:absolute;top:2px;right:2px;background:var(--terracotta);color:#fff;font-family:var(--fm);font-size:.6rem;width:16px;height:16px;border-radius:50%;display:none;align-items:center;justify-content:center;line-height:1">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Panel -->
+  <div id="capex-notif-panel" style="display:none;background:var(--surface);border:.5px solid var(--border-card);border-radius:var(--r-lg);padding:1rem 1.2rem;margin-bottom:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+      <div style="font-family:var(--fm);font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--smoke)">Notifications</div>
+      <button onclick="capexClearNotifications()" style="font-family:var(--fm);font-size:.7rem;color:var(--smoke);background:none;border:none;cursor:pointer;letter-spacing:.08em">Clear all</button>
+    </div>
+    <div id="capex-notif-list"><div style="color:var(--smoke);font-size:.84rem;text-align:center;padding:.5rem">No notifications</div></div>
+  </div>
+
+  <!-- Role Select Modal -->
+  <div id="capex-role-modal" style="display:none;background:var(--surface);border:.5px solid var(--border-card);border-radius:var(--r-lg);padding:1.2rem 1.4rem;margin-bottom:1rem">
+    <div style="font-family:var(--fm);font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--smoke);margin-bottom:.75rem">Select Your Role in This Workflow</div>
+    <div id="capex-role-options" style="display:flex;flex-direction:column;gap:6px"></div>
+    <button onclick="document.getElementById('capex-role-modal').style.display='none'" style="margin-top:.75rem;font-family:var(--fm);font-size:.72rem;background:none;border:.5px solid var(--border);border-radius:var(--r-sm);padding:.3rem .75rem;cursor:pointer;color:var(--smoke)">Cancel</button>
+  </div>
 
   <div class="biz-tab-row">
     <button class="biz-tab biz-active" id="capex-tab-pipeline-btn" onclick="capexTab('pipeline',this)">Pipeline</button>
@@ -3333,7 +3715,8 @@ capexRenderChainPreview();
         <button class="biz-btn-g" style="font-size:.72rem;padding:.3rem .75rem" onclick="capexFilterStatus('')">All</button>
         <button class="biz-btn-g" style="font-size:.72rem;padding:.3rem .75rem" onclick="capexFilterStatus('purchasing')">Purchasing</button>
         <button class="biz-btn-g" style="font-size:.72rem;padding:.3rem .75rem" onclick="capexFilterStatus('review')">In Review</button>
-        <button class="biz-btn-g" style="font-size:.72rem;padding:.3rem .75rem" onclick="capexFilterStatus('approved')">Approved</button>
+        <button class="biz-btn-g" style="font-size:.72rem;padding:.3rem .75rem" onclick="capexFilterStatus('fully-approved')">Approved</button>
+        <button class="biz-btn-g" style="font-size:.72rem;padding:.3rem .75rem;color:var(--red);border-color:var(--red)" onclick="capexFilterStatus('declined')">Declined</button>
       </div>
     </div>
     <div class="biz-capex-pipeline" id="capex-pipeline-list"></div>
@@ -3352,14 +3735,7 @@ capexRenderChainPreview();
       <div class="biz-card" style="margin-bottom:.75rem"><div class="biz-card-title">Justification &amp; Specifications</div><div style="font-size:.88rem;color:var(--t2);line-height:1.6" id="capex-d-justification"></div></div>
       <div class="biz-card" style="margin-bottom:.75rem"><div class="biz-card-title">Quotes</div><div class="biz-quote-grid" id="capex-d-quotes"></div></div>
       <div class="biz-card" style="margin-bottom:.75rem"><div class="biz-card-title">Approval Chain</div><div class="biz-chain" id="capex-d-chain"></div></div>
-      <div class="biz-card" id="capex-action-card" style="margin-bottom:.75rem;display:none">
-        <div class="biz-card-title">Your Action</div>
-        <div class="biz-fg" style="margin-bottom:.6rem"><label>Comment (optional)</label><textarea id="capex-action-comment" rows="2" placeholder="Add a note or reason..."></textarea></div>
-        <div class="biz-btn-row">
-          <button class="biz-btn-p" onclick="capexApproveStep()">Approve &amp; Forward</button>
-          <button class="biz-btn-g" style="color:var(--red);border-color:var(--red)" onclick="capexRejectStep()">Reject</button>
-        </div>
-      </div>
+      <div id="capex-action-card" style="display:none;margin-bottom:.75rem"></div>
     </div>
   </div>
 
@@ -3438,8 +3814,28 @@ capexRenderChainPreview();
   <!-- APPROVAL CHAIN SETTINGS -->
   <div class="biz-section" id="capex-settings">
     <div class="biz-card">
+      <div class="biz-card-title">EmailJS Notification Setup</div>
+      <div style="font-size:.84rem;color:var(--smoke);margin-bottom:.9rem">Connect EmailJS to send real email notifications on every approval or decline. Free at emailjs.com — no backend needed.</div>
+      <div class="biz-grid-3" style="margin-bottom:.75rem">
+        <div class="biz-fg"><label>EmailJS Public Key</label><input id="capex-ejs-key" placeholder="user_xxxxxxxxxxxx"></div>
+        <div class="biz-fg"><label>Service ID</label><input id="capex-ejs-service" placeholder="service_xxxxxxx"></div>
+        <div class="biz-fg"><label>Template ID</label><input id="capex-ejs-template" placeholder="template_xxxxxxx"></div>
+      </div>
+      <div style="font-size:.78rem;color:var(--smoke);margin-bottom:.75rem">
+        Template variables available: <code style="font-family:var(--fm);background:var(--surface3);padding:1px 5px;border-radius:3px">{{to_name}}</code> <code style="font-family:var(--fm);background:var(--surface3);padding:1px 5px;border-radius:3px">{{to_email}}</code> <code style="font-family:var(--fm);background:var(--surface3);padding:1px 5px;border-radius:3px">{{subject}}</code> <code style="font-family:var(--fm);background:var(--surface3);padding:1px 5px;border-radius:3px">{{message}}</code> <code style="font-family:var(--fm);background:var(--surface3);padding:1px 5px;border-radius:3px">{{request_name}}</code> <code style="font-family:var(--fm);background:var(--surface3);padding:1px 5px;border-radius:3px">{{decided_by}}</code>
+      </div>
+      <button class="biz-btn-p" onclick="capexSaveEmailJS()">Save Email Settings</button>
+    </div>
+
+    <div class="biz-card">
       <div class="biz-card-title">Configure Approval Chain</div>
-      <div style="font-size:.84rem;color:var(--smoke);margin-bottom:1rem">Define the approval steps for your property. Add, remove, or rename roles to match your structure.</div>
+      <div style="font-size:.84rem;color:var(--smoke);margin-bottom:1rem">Define each step — role name, contact name, and email. This drives the workflow and notifications.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 36px;gap:6px;padding:.3rem 0;border-bottom:.5px solid var(--border);margin-bottom:.5rem">
+        <div style="font-family:var(--fm);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--smoke)">Role</div>
+        <div style="font-family:var(--fm);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--smoke)">Contact Name</div>
+        <div style="font-family:var(--fm);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--smoke)">Email</div>
+        <div></div>
+      </div>
       <div class="biz-chain-builder" id="capex-chain-builder"></div>
       <div class="biz-btn-row">
         <button class="biz-btn-g" onclick="capexAddChainStep()">+ Add Step</button>
@@ -5890,7 +6286,7 @@ function closeKeyModal() {
 }
 
 function extractJSON(txt) {
-  var cleaned = txt.replace(/```json/g,'').replace(/```/g,'').trim();
+  var cleaned = txt.replace(new RegExp(String.fromCharCode(96,96,96)+'json','g'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').trim();
   var tries = [
     function(){ return JSON.parse(cleaned); },
     function(){ var m=cleaned.match(/\{[\s\S]*\}/); if(m) return JSON.parse(m[0]); throw new Error('no match'); },
@@ -7634,7 +8030,7 @@ function loadIPData(name, type, note) {
     }
     var d = null;
     try {
-      var c = txt.replace(/```json/g,'').replace(/```/g,'').trim();
+      var c = txt.replace(new RegExp(String.fromCharCode(96,96,96)+'json','g'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').trim();
       // Try 1: direct parse
       try { d = JSON.parse(c); } catch(e1) {
         // Try 2: extract JSON block
@@ -7881,7 +8277,7 @@ function buildMenuAI() {
       if(dbg){dbg.style.display='block'; dbg.textContent='API Error (call 1): '+err1;}
       return;
     }
-    var clean1=txt1.replace(/```json/gi,'').replace(/```/g,'').trim();
+    var clean1=txt1.replace(new RegExp(String.fromCharCode(96,96,96)+'json','gi'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').trim();
     var head=extractJSON(clean1);
     if(!head){
       try{var s=clean1.indexOf('{');var e=clean1.lastIndexOf('}');if(s>=0&&e>s)head=JSON.parse(clean1.slice(s,e+1));}catch(fe){}
@@ -7947,7 +8343,7 @@ function buildMenuAI() {
       if(!body||!body.courses) {
         // Try JSON repair for truncated responses
         try {
-          var c = txt2.replace(/```json/g,'').replace(/```/g,'').trim();
+          var c = txt2.replace(new RegExp(String.fromCharCode(96,96,96)+'json','g'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').trim();
           var openQ = (c.split('"').length-1)%2!==0;
           if(openQ) c+='"';
           var opens=(c.match(/\{/g)||[]).length-(c.match(/\}/g)||[]).length;
@@ -8084,7 +8480,8 @@ function downloadMenuPDF() {
   if(menu.fermentationNote||menu.fermentation_note) html+='<div style="background:#dcead4;border-left:3px solid #5c6e4a;padding:.7rem .9rem;margin-top:1rem"><div style="font-family:monospace;font-size:.55rem;text-transform:uppercase;color:#5c6e4a;margin-bottom:.2rem">Fermentation Note</div><div style="font-size:.88rem;font-style:italic">'+(menu.fermentationNote||menu.fermentation_note)+'</div></div>';
   if(menu.wineNote) html+='<div style="background:#f5ead8;border-left:3px solid #c2744a;padding:.7rem .9rem;margin-top:.7rem"><div style="font-family:monospace;font-size:.55rem;text-transform:uppercase;color:#c2744a;margin-bottom:.2rem">Beverage Pairing</div><div style="font-size:.88rem;font-style:italic">'+menu.wineNote+'</div></div>';
   if(menu.chefNote) html+='<div style="text-align:center;margin-top:1.8rem;font-style:italic;color:#9a8a7a;font-size:.95rem">'+menu.chefNote+'</div>';
-  html+='<div class="footer">cultivate-studio.com &middot; '+new Date().toLocaleDateString()+'</div></body></html>';
+  html+='<div class="footer">cultivate-studio.com &middot; '+new Date().toLocaleDateString()+'</div>+</body></html>';
+
   openPDF(html,'cultivate-menu');
 }
 
@@ -8849,7 +9246,8 @@ function exportPLPDF() {
   if(grns.length){html+='<div class="sec" style="color:#3a7a3a">Green Flags</div>'; grns.forEach(function(f){html+='<div class="flag g"><div class="ft ft-g">'+f.title+'</div><div class="fd">'+f.detail+'</div></div>';});}
   if(ai.opportunities&&ai.opportunities.length){html+='<div class="sec">Opportunities</div>'; ai.opportunities.forEach(function(op){if(!op.title)return; html+='<div class="opp"><strong>'+op.title+'</strong> <span style="font-size:.92rem;color:#9a8a7a">('+op.priority+')</span><br><span style="font-size:1.02rem">'+op.detail+'</span></div>';});}
   if(ai.actions&&ai.actions.length){html+='<div class="sec">Action Timeline</div>'; ai.actions.forEach(function(ac){if(!ac.action)return; html+='<div style="padding:.4rem 0;font-size:1.02rem;border-bottom:1px solid #ede4d7"><strong>'+ac.when+':</strong> '+ac.action+'</div>';});}
-  html+='<div class="footer"><span>Cultivate Studio — Chef Intelligence & Flavor Matrix</span><span>'+new Date().toLocaleDateString()+'</span></div></body></html>';
+  html+='<div class="footer"><span>Cultivate Studio — Chef Intelligence & Flavor Matrix</span><span>'+new Date().toLocaleDateString()+'</span></div>+</body></html>';
+
   openPDF(html,'cultivate-pl-report');
 }
 
@@ -8913,7 +9311,8 @@ function download90PDF() {
   html+='<div class="summary">'+(r.executive_summary||'')+'</div>';
   if(r.priorities&&r.priorities.length){html+='<div class="sec">Top Priorities</div>'; for(var i=0;i<r.priorities.length;i++){var p2=r.priorities[i]; html+='<div class="priority"><div style="font-family:monospace;font-size:.84rem;color:#c2744a;margin-bottom:.2rem">Priority '+p2.rank+' - '+(p2.impact||'').toUpperCase()+' IMPACT - '+(p2.timeline||'')+'</div><div style="font-size:.9rem;font-weight:bold;margin-bottom:.25rem">'+(p2.title||'')+'</div><div style="font-size:1.02rem;color:#6a5a4a">'+(p2.description||'')+'</div><div style="font-family:monospace;font-size:1rem;color:#9a8a7a;margin-top:.3rem">KPI: '+(p2.kpi||'-')+'</div></div>';}}
   if(r.quick_wins&&r.quick_wins.length){html+='<div class="sec">Quick Wins</div>'; for(var i=0;i<r.quick_wins.length;i++) html+='<div style="padding:.28rem 0;font-size:1.02rem;border-bottom:1px solid #edd5c4">> '+r.quick_wins[i]+'</div>';}
-  html+='<div class="footer"><span>Cultivate Studio — Chef Intelligence & Flavor Matrix</span><span>'+new Date().toLocaleDateString()+'</span></div></body></html>';
+  html+='<div class="footer"><span>Cultivate Studio — Chef Intelligence & Flavor Matrix</span><span>'+new Date().toLocaleDateString()+'</span></div>+</body></html>';
+
   openPDF(html);
 }
 
@@ -8928,7 +9327,8 @@ function download12PDF() {
   html+='<div class="sec">Month-by-Month Roadmap</div>';
   var months=r.months||[];
   for(var i=0;i<months.length;i++){var m=months[i]; html+='<div class="mb"><div style="display:flex;justify-content:space-between;margin-bottom:.25rem"><span style="font-family:monospace;font-size:.86rem;color:#5c6e4a;text-transform:uppercase">'+(m.month||'')+'</span><span style="font-family:monospace;font-size:.86rem;color:#c2744a">'+(m.financial_target||'')+'</span></div><div style="font-size:.9rem;font-weight:bold;margin-bottom:.2rem">'+(m.title||'')+'</div><div style="font-size:.98rem;color:#9a8a7a;font-style:italic;margin-bottom:.3rem">'+(m.focus||'')+'</div>'; var acts=m.key_actions||[]; for(var j=0;j<acts.length;j++) html+='<div style="font-size:.98rem;color:#6a5a4a;padding:.12rem 0">- '+acts[j]+'</div>'; html+='</div>';}
-  html+='<div class="footer"><span>Cultivate Studio — Chef Intelligence & Flavor Matrix</span><span>'+new Date().toLocaleDateString()+'</span></div></body></html>';
+  html+='<div class="footer"><span>Cultivate Studio — Chef Intelligence & Flavor Matrix</span><span>'+new Date().toLocaleDateString()+'</span></div>+</body></html>';
+
   openPDF(html);
 }
 
@@ -9868,7 +10268,8 @@ function exportSupplierDirectory() {
     if(s.price) html+='<div style="font-size:.95rem;color:#6a5a4a">Pricing: '+s.price+'</div>';
     html+='</div>';
   });
-  html+='<div class="footer">cultivate-studio.com · Confidential · '+new Date().toLocaleDateString()+'</div></body></html>';
+  html+='<div class="footer">cultivate-studio.com · Confidential · '+new Date().toLocaleDateString()+'</div>+</body></html>';
+
   openPDF(html);
 }
 
@@ -10197,7 +10598,8 @@ function exportFHPitch() {
     if(!s[1]) return;
     html+='<div class="sec">'+s[0]+'</div><div class="body">'+s[1]+'</div>';
   });
-  html+='<div class="footer"><span>Cultivate Studio — Marco Turatti</span><span>'+new Date().toLocaleDateString()+'</span></div></body></html>';
+  html+='<div class="footer"><span>Cultivate Studio — Marco Turatti</span><span>'+new Date().toLocaleDateString()+'</span></div>+</body></html>';
+
   openPDF(html,'cultivate-fourhands-pitch');
 }
 
@@ -10499,7 +10901,8 @@ function exportImpactReport() {
   var el=document.getElementById('ir-output'); if(!el) return;
   var d=window._lastIR||{};
   var clone=el.cloneNode(true); clone.querySelectorAll('button').forEach(function(b){b.remove();});
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Georgia,serif;max-width:680px;margin:0 auto;padding:2.5rem;color:#3a3020;background:#fff}button{display:none!important}</style></head><body>'+clone.innerHTML+'<div style="margin-top:2rem;padding-top:.8rem;border-top:1px solid #d9c9b4;font-family:monospace;font-size:.98rem;color:#9a8a7a;display:flex;justify-content:space-between"><span>Cultivate Studio</span><span>'+new Date().toLocaleDateString()+'</span></div></body></html>';
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Georgia,serif;max-width:680px;margin:0 auto;padding:2.5rem;color:#3a3020;background:#fff}button{display:none!important}</style></head><body>'+clone.innerHTML+'<div style="margin-top:2rem;padding-top:.8rem;border-top:1px solid #d9c9b4;font-family:monospace;font-size:.98rem;color:#9a8a7a;display:flex;justify-content:space-between"><span>Cultivate Studio</span><span>'+new Date().toLocaleDateString()+'</span></div>+</body></html>';
+
   openPDF(html,'cultivate-sustainability-report');
 }
 
@@ -10747,7 +11150,8 @@ function exportProfilePDF() {
   if(phil) html+='<div class="sec">Culinary Philosophy</div><div class="body">'+phil+'</div>';
   if(profileCV.length){html+='<div class="sec">Career</div>'; profileCV.forEach(function(e){ html+='<div class="cv-entry"><div class="cv-role">'+e.role+'</div><div style="display:flex;justify-content:space-between"><span class="cv-prop">'+e.prop+'</span><span class="cv-period">'+e.period+'</span></div>'+(e.achieve?'<div style="font-size:.98rem;color:#6a5a4a;margin-top:.25rem">'+e.achieve+'</div>':'')+'</div>'; });}
   if(profileAwards.length){html+='<div class="sec">Awards & Recognition</div><div>'; profileAwards.forEach(function(a){ html+='<div class="award">'+a.name+(a.body?' — '+a.body:'')+(a.year?' '+a.year:'')+'</div>'; }); html+='</div>';}
-  html+='<div class="footer"><span>Cultivate Studio — '+name+'</span><span>'+new Date().toLocaleDateString()+'</span></div></body></html>';
+  html+='<div class="footer"><span>Cultivate Studio — '+name+'</span><span>'+new Date().toLocaleDateString()+'</span></div>+</body></html>';
+
   openPDF(html,'cultivate-chef-profile-'+name.replace(/\s/g,'-').toLowerCase());
 }
 
@@ -11590,7 +11994,7 @@ function buildAlaCarteMenu(ingList, pool, uploadedRef, sys) {
     var r = extractJSON(txt);
     if(r) return r;
     try {
-      var c = txt.replace(/```json/g,'').replace(/```/g,'').trim();
+      var c = txt.replace(new RegExp(String.fromCharCode(96,96,96)+'json','g'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').trim();
       if((c.split('"').length-1)%2!==0) c+='"';
       var arrO=(c.match(/\[/g)||[]).length-(c.match(/\]/g)||[]).length;
       var objO=(c.match(/\{/g)||[]).length-(c.match(/\}/g)||[]).length;
@@ -12548,7 +12952,7 @@ function fmScoreDish(dishText,callback){
   apiCall(sys,prompt,250,function(err,txt){
     if(err||!txt){callback(null);return;}
     try{
-      var clean=txt.replace(/```json/g,'').replace(/```/g,'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
+      var clean=txt.replace(new RegExp(String.fromCharCode(96,96,96)+'json','g'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
       var d=JSON.parse(clean);
       callback(d);
     }catch(e){
@@ -12622,7 +13026,7 @@ function fmAIRefresh(btn){
     if(btn){btn.disabled=false;btn.textContent='↺ AI Refresh Matrix';}
     if(err||!txt){alert('AI Refresh failed: '+(err||'No response'));return;}
     try{
-      var clean=txt.replace(/```json/g,'').replace(/```/g,'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
+      var clean=txt.replace(new RegExp(String.fromCharCode(96,96,96)+'json','g'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
       var d;
       try{d=JSON.parse(clean);}catch(e){d=extractJSON(txt);}
       if(!d||!d.nodes||!d.nodes.length){alert('AI returned no nodes. Try again.');return;}
@@ -12784,7 +13188,7 @@ function mfrLoadFile(e) {
 function parseMenuReportJSON(txt) {
   if (!txt) return null;
   // Strip markdown fences
-  var c = txt.replace(/```json/gi,'').replace(/```/g,'').trim();
+  var c = txt.replace(new RegExp(String.fromCharCode(96,96,96)+'json','gi'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').trim();
   // Try 1: direct parse of whole response
   try { var d = JSON.parse(c); if (d && typeof d === 'object') return d; } catch(e) {}
   // Try 2: extract largest {...} block
@@ -13302,7 +13706,7 @@ function downloadMenuReport() {
   }
 
   html += '<div class="footer">Cultivate Studio Chef Intelligence Platform &nbsp;&middot;&nbsp; cultivate-studio.com &nbsp;&middot;&nbsp; '+new Date().toLocaleDateString()+'</div>';
-  html += '</body></html>';
+  html += '\n</body></html>';
 
   // Download
   var fname = (r.name||'menu-report').toLowerCase().replace(/[^a-z0-9]+/g,'-');
@@ -13348,7 +13752,7 @@ function checkPrice() {
       return;
     }
     try {
-      var clean = txt.replace(/```json/g,'').replace(/```/g,'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
+      var clean = txt.replace(new RegExp(String.fromCharCode(96,96,96)+'json','g'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
       var d; try{d=JSON.parse(clean);}catch(e){d=extractJSON(txt);}
       if(!d) throw new Error('Parse failed');
 
@@ -13595,7 +13999,7 @@ function runHeroDiscover() {
       return;
     }
     try {
-      var clean = txt.replace(/```json/g,'').replace(/```/g,'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
+      var clean = txt.replace(new RegExp(String.fromCharCode(96,96,96)+'json','g'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
       var d; try{d=JSON.parse(clean);}catch(e){d=extractJSON(txt);}
       if(!d||!d.results) throw new Error('No results');
       output.innerHTML = '<div style="font-family:var(--fm);font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;color:var(--moss);margin-bottom:.7rem">'+d.results.length+' suggestions found</div>'
@@ -14343,7 +14747,7 @@ function fmPreviewWheel() {
     if (!out) return;
     if (err||!txt){out.innerHTML='<div style="color:var(--red);font-size:.88rem">Score failed.</div>';return;}
     try{
-      var clean=txt.replace(/```json/g,'').replace(/```/g,'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
+      var clean=txt.replace(new RegExp(String.fromCharCode(96,96,96)+'json','g'),'').replace(new RegExp(String.fromCharCode(96,96,96),'g'),'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
       var d; try{d=JSON.parse(clean);}catch(e){d=extractJSON(txt);}
       if(!d) throw new Error('parse fail');
       out.innerHTML = fmRenderWheel(d,220) + '<div style="font-size:.84rem;color:var(--smoke);margin-top:.5rem;text-align:center">'+dish+'</div>';
@@ -14606,7 +15010,8 @@ if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalon
 <!--
   ╔══════════════════════════════════════════════════════════════════╗
   ║  CULTIVATE STUDIO — FLOATING AI AGENT v2                        ║
-  ║  Drop-in module — paste before </body> in CultivateStudio.html  ║
+  ║  Drop-in module — paste before 
+</body> in CultivateStudio.html  ║
   ║                                                                  ║
   ║  WHAT THIS DOES:                                                 ║
   ║  · Floating assistant accessible from every page                 ║
@@ -14659,9 +15064,10 @@ if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalon
 /* ── TRIGGER PILL ── */
 #cs-agent-trigger {
   position: fixed;
-  top: 14px;
-  right: 14px;
-  bottom: auto;
+  top: auto;
+  right: auto;
+  bottom: 20px;
+  left: 20px;
   z-index: 99998;
   display: flex;
   align-items: center;
@@ -15034,7 +15440,7 @@ if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalon
 /* ── MOBILE ── */
 @media (max-width: 480px) {
   #cs-agent-panel { width: calc(100vw - 20px); height: calc(100vh - 80px); top: 70px; bottom: auto; right: 10px; }
-  #cs-agent-trigger { top: auto; bottom: 20px; right: 14px; }
+  #cs-agent-trigger { top: auto; bottom: 16px; left: 12px; right: auto; }
 }
 </style>
 
@@ -15662,8 +16068,8 @@ function renderResearchCards(research, outlet) {
       <div class="ag-intel-title"><div class="ag-pillar-dot" style="background:#c9a96e"></div>⭐ Global Benchmarks</div>
       <div class="ag-intel-toggle">▾</div>
     </div>
-    <div class="ag-intel-body open"><ul>${research.globalBenchmarks.map(b => `<li>${b}</li>`).join('')}</ul></div>
-  </div>` : '';
+    <div class="ag-intel-body open"><ul>${research.globalBenchmarks.map(b => `<li>${b}</li>`).join('')}</ul></div>+</div>` : '';
+
 
   const movements = research.emergingMovements?.length ? `
   <div class="ag-intel-card">
@@ -15671,8 +16077,8 @@ function renderResearchCards(research, outlet) {
       <div class="ag-intel-title"><div class="ag-pillar-dot" style="background:#c28070"></div>📡 Emerging Movements</div>
       <div class="ag-intel-toggle">▾</div>
     </div>
-    <div class="ag-intel-body open"><ul>${research.emergingMovements.map(m => `<li>${m}</li>`).join('')}</ul></div>
-  </div>` : '';
+    <div class="ag-intel-body open"><ul>${research.emergingMovements.map(m => `<li>${m}</li>`).join('')}</ul></div>+</div>` : '';
+
 
   const timestamp = research.timestamp ? `<div class="ag-intel-timestamp">Last researched: ${new Date(research.timestamp).toLocaleString('en-GB')}</div>` : '';
 
@@ -16088,5 +16494,60 @@ console.log('[Cultivate Agent v2] Initialized. Outlets:', state.outlets.length, 
 })();
 </script>
 
+
+<script>
+(function(){
+  // Make the Cultivate Agent trigger draggable
+  var el = document.getElementById('cs-agent-trigger');
+  if(!el) return;
+  var dragging = false, startX, startY, origLeft, origBottom;
+
+  el.addEventListener('mousedown', function(e){
+    // Only drag on the pill itself, not clicks
+    dragging = false;
+    startX = e.clientX; startY = e.clientY;
+    origLeft = el.getBoundingClientRect().left;
+    origBottom = window.innerHeight - el.getBoundingClientRect().bottom;
+  });
+
+  document.addEventListener('mousemove', function(e){
+    if(e.buttons !== 1) return;
+    var dx = e.clientX - startX, dy = e.clientY - startY;
+    if(!dragging && Math.abs(dx)+Math.abs(dy) > 5) dragging = true;
+    if(!dragging) return;
+    var newLeft = Math.max(0, Math.min(window.innerWidth - el.offsetWidth, origLeft + dx));
+    var newBottom = Math.max(0, Math.min(window.innerHeight - el.offsetHeight, origBottom - dy));
+    el.style.left = newLeft + 'px';
+    el.style.right = 'auto';
+    el.style.top = 'auto';
+    el.style.bottom = newBottom + 'px';
+  });
+
+  document.addEventListener('mouseup', function(){
+    dragging = false;
+  });
+
+  // Touch drag support
+  var tStartX, tStartY, tOrigLeft, tOrigBottom, tDragging=false;
+  el.addEventListener('touchstart', function(e){
+    var t = e.touches[0];
+    tStartX=t.clientX; tStartY=t.clientY; tDragging=false;
+    tOrigLeft=el.getBoundingClientRect().left;
+    tOrigBottom=window.innerHeight-el.getBoundingClientRect().bottom;
+  },{passive:true});
+  el.addEventListener('touchmove', function(e){
+    var t=e.touches[0];
+    var dx=t.clientX-tStartX, dy=t.clientY-tStartY;
+    if(!tDragging&&Math.abs(dx)+Math.abs(dy)>8) tDragging=true;
+    if(!tDragging) return;
+    e.preventDefault();
+    var newLeft=Math.max(0,Math.min(window.innerWidth-el.offsetWidth,tOrigLeft+dx));
+    var newBottom=Math.max(0,Math.min(window.innerHeight-el.offsetHeight,tOrigBottom-dy));
+    el.style.left=newLeft+'px'; el.style.right='auto';
+    el.style.top='auto'; el.style.bottom=newBottom+'px';
+  },{passive:false});
+  el.addEventListener('touchend',function(){tDragging=false;});
+})();
+</script>
 </body>
 </html>
