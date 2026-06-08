@@ -1838,6 +1838,7 @@ h1, h2 {
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <div class="page" id="page-pl">
 
 <style>
@@ -2012,12 +2013,12 @@ h1, h2 {
       ondragover="bizDragOver(event,'biz-pl-zone')"
       ondragleave="bizDragLeave('biz-pl-zone')"
       ondrop="bizDrop(event,'biz-pl-zone')">
-      <input type="file" id="biz-pl-file" accept=".xlsx,.xls,.csv,.pdf" style="display:none" onchange="bizFileSelected(event,'biz-pl-zone')">
+      <input type="file" id="biz-pl-file" accept=".xlsx,.xls,.xlsm,.csv,.pdf" style="display:none" onchange="bizFileSelected(event,'biz-pl-zone')">
       <div class="biz-upload-title">Drop your P&amp;L or Financial Statement</div>
       <div class="biz-upload-sub">Drag &amp; drop or tap to select — AI agent reads and maps automatically</div>
       <div class="biz-fmt-tags">
         <span class="biz-fmt">PDF</span><span class="biz-fmt">CSV</span>
-        <span class="biz-fmt">XLSX</span><span class="biz-fmt">XLS</span>
+        <span class="biz-fmt">XLSX</span><span class="biz-fmt">XLS</span><span class="biz-fmt">XLSM</span>
       </div>
     </div>
     <div style="text-align:center;margin-bottom:.75rem">
@@ -2243,8 +2244,15 @@ window.bizSwotLoadOutlet = window.bizSwotLoadOutletByCode;
 window.bizSwotGenerate = function(){
   if(!_bizSwotCode){
     var ao=null;try{ao=getActiveOutlet();}catch(e){}
-    if(ao&&ao.name) _bizSwotCode=ao.name;
-    else{ alert('No active outlet — switch outlet in the top bar first'); return; }
+    var shellMode=localStorage.getItem('cultivate_shell_mode_v1');
+    var isCentral=shellMode==='central'||!ao;
+    if(ao&&ao.name){ _bizSwotCode=ao.name; }
+    else if(isCentral){
+      /* Central mode — run SWOT for the full operation */
+      _bizSwotCode='Central';
+    } else {
+      alert('No active outlet — switch outlet in the top bar first'); return;
+    }
   }
   var mapping = JSON.parse(localStorage.getItem('str_mapping')||'[]');
   var m = mapping.find(function(x){return x.code===_bizSwotCode;})||{outlet:_bizSwotCode,segment:'luxury-resort'};
@@ -2255,7 +2263,8 @@ window.bizSwotGenerate = function(){
   document.getElementById('biz-swot-gen-btn').disabled=true;
   var ctx = concept ? 'Concept: '+concept.name+'. '+concept.oneliner+'. Cuisine: '+(concept.cuisine||'—')+'. Differentiators: '+(concept.diff||'—')+'. Avg Check: '+(concept.check||'—')+'.' : 'Segment: '+m.segment+', outlet: '+m.outlet+'. No concept data.';
   var prompt = 'Senior F&B strategist for Cultivate Studio. Generate a SWOT for this outlet. OUTLET: '+m.outlet+' ('+_bizSwotCode+') Segment: '+m.segment+' '+ctx+' Return ONLY valid JSON no markdown: {"strengths":["item","item","item","item"],"weaknesses":["item","item","item","item"],"opportunities":["item","item","item","item"],"threats":["item","item","item","item"],"strategicRead":"2 sentences on the most important strategic implication."}';
-  fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+  var _bizKey3=localStorage.getItem('cultivate_api_key')||window.ANTHROPIC_KEY||'';
+  fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':_bizKey3,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
     body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:700,messages:[{role:'user',content:prompt}]})
   }).then(function(r){return r.json();}).then(function(data){
     loading.classList.remove('visible');
@@ -2265,11 +2274,21 @@ window.bizSwotGenerate = function(){
       var clean=raw;try{var fi=raw.indexOf('{');var li=raw.lastIndexOf('}');if(fi>=0&&li>fi)clean=raw.slice(fi,li+1);}catch(x){}var sw=JSON.parse(clean);
       sw.outlet=_bizSwotCode; sw.outletName=m.outlet; sw.generated=new Date().toLocaleString();
       window._bizSwotDraft=sw; _swotRenderEditor(sw);
-    }catch(e){alert('Generation failed — check API connection');}
-  }).catch(function(){loading.classList.remove('visible');document.getElementById('biz-swot-gen-btn').disabled=false;});
+    }catch(e){
+      var _zone=document.getElementById('biz-swot-concept-hint');
+      if(_zone){_zone.innerHTML='<span style="color:var(--red)">Generation failed: '+e.message+'</span>';_zone.style.display='block';}
+      else alert('Generation failed: '+e.message);
+    }
+  }).catch(function(fetchErr){
+    loading.classList.remove('visible');
+    document.getElementById('biz-swot-gen-btn').disabled=false;
+    var _zone=document.getElementById('biz-swot-concept-hint');
+    var msg=fetchErr?fetchErr.message:'Network error';
+    if(_zone){_zone.innerHTML='<span style="color:var(--red)">API error: '+msg+'</span>';_zone.style.display='block';}
+  });
 };
 
-function _swotRenderEditor(sw){
+window._swotRenderEditor = function _swotRenderEditor(sw){
   var quads=[{key:'strengths',cls:'biz-swot-s',letter:'S',title:'Strengths'},{key:'weaknesses',cls:'biz-swot-w',letter:'W',title:'Weaknesses'},{key:'opportunities',cls:'biz-swot-o',letter:'O',title:'Opportunities'},{key:'threats',cls:'biz-swot-t',letter:'T',title:'Threats'}];
   var grid=document.getElementById('biz-swot-edit-grid');
   if(!grid) return;
@@ -2403,6 +2422,7 @@ _swotRenderSaved();
 
 /* ── STATE ── */
 var bizData = null;
+try{ var _bd=localStorage.getItem('biz_last_data'); if(_bd) bizData=JSON.parse(_bd); }catch(e){}
 var bizCharts = {};
 var capexChain = JSON.parse(localStorage.getItem('capex_chain')||'null') || [
   {role:'Outlet',name:'',email:''},
@@ -2433,6 +2453,73 @@ function bizTab(id, btn){
   var sec = document.getElementById('biz-'+id);
   if(sec){ sec.classList.add('biz-active'); }
   if(btn){ btn.classList.add('biz-active'); }
+  /* If switching to benchmarks and bizData exists, render bars */
+  if(id==='benchmarks' && bizData){
+    var _be=document.getElementById('biz-bench-empty');
+    var _bc=document.getElementById('biz-bench-content');
+    if(_be) _be.style.display='none';
+    if(_bc) _bc.style.display='block';
+    /* Re-render benchmark bars from bizData */
+    var _d=bizData;
+    var _benches=[
+      {label:'Food Cost %',you:parseFloat(_d.foodPct),market:30,ok:parseFloat(_d.foodPct)<=32,label2:parseFloat(_d.foodPct)<=32?'ON TARGET':'ABOVE'},
+      {label:'Bev Cost %',you:parseFloat(_d.bevPct),market:20,ok:parseFloat(_d.bevPct)<=22,label2:parseFloat(_d.bevPct)<=22?'ON TARGET':'HIGH'},
+      {label:'Labour %',you:parseFloat(_d.labourPct),market:32,ok:parseFloat(_d.labourPct)<=35,label2:parseFloat(_d.labourPct)<=35?'IN RANGE':'ABOVE'},
+      {label:'GOP %',you:parseFloat(_d.gopPct),market:22,ok:parseFloat(_d.gopPct)>=18,label2:parseFloat(_d.gopPct)>=18?'HEALTHY':'REVIEW'}
+    ];
+    var _br=document.getElementById('biz-bench-rows');
+    if(_br) _br.innerHTML=_benches.map(function(b){
+      return '<div class="biz-bench-row"><div class="biz-bench-label">'+b.label+'</div>'
+        +'<div class="biz-bench-bar-wrap"><div class="biz-bench-bar-you" style="width:'+Math.min(b.you,100)+'%"></div>'
+        +'<div class="biz-bench-marker" style="left:'+b.market+'%"></div></div>'
+        +'<div class="biz-bench-val">'+b.you.toFixed(1)+'%</div>'
+        +'<span class="biz-bench-status '+(b.ok?'biz-b-ok':'biz-b-warn')+'">'+b.label2+'</span></div>';
+    }).join('');
+    /* Restore benchmark narrative from last analysis */
+    var _lastAI=null;try{_lastAI=JSON.parse(localStorage.getItem('biz_last_ai')||'null');}catch(e){}
+    var _bn=document.getElementById('biz-bench-narrative-text');
+    if(_bn&&_lastAI) _bn.innerHTML='<p>'+(_lastAI.benchmarkNarrative||_lastAI.compsetRead||'')+'</p>';
+  }
+  /* If switching to SWOT — refresh list and auto-load last analysis SWOT */
+  if(id==='swot'){
+    if(typeof _swotPopulate==='function') _swotPopulate();
+    if(typeof _swotRenderSaved==='function') _swotRenderSaved();
+    var _lastData=null;
+    try{_lastData=JSON.parse(localStorage.getItem('biz_last_data')||'null');}catch(e){}
+    if(_lastData){
+      var _swots=JSON.parse(localStorage.getItem('biz_swots')||'{}');
+      var _key=_lastData.property||'analysis';
+      if(_swots[_key]){
+        var _sw=_swots[_key];
+        window._bizSwotDraft=_sw;
+        /* Try editable render first */
+        if(typeof window._swotRenderEditor==='function'){
+          window._swotRenderEditor(_sw);
+          var _se=document.getElementById('biz-swot-editor');
+          if(_se) _se.style.display='block';
+        } else {
+          /* Fallback: render static SWOT grid directly */
+          var _grid=document.getElementById('biz-swot-edit-grid');
+          if(_grid){
+            var _quads=[['biz-swot-s','S','Strengths',_sw.strengths||[]],['biz-swot-w','W','Weaknesses',_sw.weaknesses||[]],['biz-swot-o','O','Opportunities',_sw.opportunities||[]],['biz-swot-t','T','Threats',_sw.threats||[]]];
+            _grid.innerHTML=_quads.map(function(q){
+              return '<div class="biz-swot-card '+q[0]+'"><div class="biz-swot-letter">'+q[1]+'</div><div class="biz-swot-title">'+q[2]+'</div><ul>'+q[3].map(function(i){return '<li>'+i+'</li>';}).join('')+'</ul></div>';
+            }).join('');
+            var _se2=document.getElementById('biz-swot-editor');
+            if(_se2) _se2.style.display='block';
+          }
+        }
+        var _narr=document.getElementById('biz-swot-narrative-text');
+        if(_narr) _narr.innerHTML='<p>'+(_sw.strategicRead||'')+'</p>';
+        /* Show note */
+        var _hint=document.getElementById('biz-swot-concept-hint');
+        if(_hint){
+          _hint.innerHTML='<strong style="color:var(--moss)">From last analysis:</strong> '+(_lastData.property||_key);
+          _hint.style.display='block';
+        }
+      }
+    }
+  }
 }
 window.bizTab = bizTab;
 
@@ -2457,11 +2544,72 @@ window.bizDrop = function(e,zoneId){
   var f = e.dataTransfer.files[0];
   if(f) bizFileSelected({target:{files:[f]}},zoneId);
 };
+var _bizUploadedData = null;
+var _bizFileInfo = null;
+
 window.bizFileSelected = function(e,zoneId){
   var f = e.target.files[0];
   if(!f) return;
   var zone = document.getElementById(zoneId);
-  zone.innerHTML = '<div class="biz-upload-title" style="color:var(--moss)">✓ '+f.name+'</div><div class="biz-upload-sub">File ready — click Analyse to process</div>';
+  var ext = f.name.split('.').pop().toLowerCase();
+  zone.innerHTML = '<div class="biz-upload-title" style="color:var(--moss)">Reading '+f.name+'...</div>';
+
+  if(ext==='csv'){
+    var rdr = new FileReader();
+    rdr.onload = function(ev){
+      _bizUploadedData = ev.target.result;
+      var rows = _bizUploadedData.split(String.fromCharCode(10)).length;
+      zone.innerHTML = '<div class="biz-upload-title" style="color:var(--moss)">&#10003; '+f.name+'</div><div class="biz-upload-sub">'+rows+' rows — click Analyse to process</div>';
+    };
+    rdr.readAsText(f);
+
+  } else if(ext==='xlsx'||ext==='xls'||ext==='xlsm'||ext==='xlsb'){
+    var rdr2 = new FileReader();
+    rdr2.onload = function(ev){
+      try{
+        var wb = XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+        /* Find the most relevant sheet — P&L keywords first */
+        var plKeywords = ['p&l','pl','profit','loss','income','revenue','f&b','fnb','summary','report','monthly','result'];
+        var bestSheet = null;
+        var bestScore = -1;
+        wb.SheetNames.forEach(function(name){
+          var nameLow = name.toLowerCase();
+          var score = 0;
+          plKeywords.forEach(function(kw){ if(nameLow.indexOf(kw)>=0) score+=2; });
+          /* Prefer sheets with actual data */
+          var csv = XLSX.utils.sheet_to_csv(wb.Sheets[name]);
+          var dataRows = csv.split(String.fromCharCode(10)).filter(function(r){ return r.replace(/,/g,'').trim().length>0; }).length;
+          if(dataRows > 5) score += 1;
+          if(score > bestScore){ bestScore = score; bestSheet = name; }
+        });
+        /* Use best sheet, fall back to first sheet with data */
+        if(!bestSheet) bestSheet = wb.SheetNames[0];
+        var csv = XLSX.utils.sheet_to_csv(wb.Sheets[bestSheet]);
+        /* Also grab first sheet if different */
+        var extraCsv = '';
+        if(bestSheet !== wb.SheetNames[0]){
+          extraCsv = 'Sheet: '+wb.SheetNames[0]+String.fromCharCode(10)+XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+        }
+        _bizUploadedData = 'Sheet: '+bestSheet+String.fromCharCode(10)+csv+(extraCsv?String.fromCharCode(10)+String.fromCharCode(10)+extraCsv:'');
+        _bizFileInfo = {name:f.name, sheets:wb.SheetNames.length, bestSheet:bestSheet};
+        zone.innerHTML = '<div class="biz-upload-title" style="color:var(--moss)">&#10003; '+f.name+'</div>'
+          +'<div class="biz-upload-sub">'+wb.SheetNames.length+' sheets — reading: <strong>'+bestSheet+'</strong></div>'
+          +'<div style="margin-top:.4rem;font-family:var(--fm);font-size:.7rem;color:var(--smoke)">Click Analyse to extract financials</div>';
+      }catch(err){
+        zone.innerHTML = '<div class="biz-upload-title" style="color:var(--red)">&#9888; Could not read '+f.name+'</div>'
+          +'<div class="biz-upload-sub">Save as .CSV or .XLSX (not macro-enabled) and re-upload</div>';
+      }
+    };
+    rdr2.readAsArrayBuffer(f);
+
+  } else if(ext==='pdf'){
+    var rdr3 = new FileReader();
+    rdr3.onload = function(ev){
+      _bizUploadedData = ev.target.result;
+      zone.innerHTML = '<div class="biz-upload-title" style="color:var(--moss)">&#10003; '+f.name+'</div><div class="biz-upload-sub">PDF ready — click Analyse to extract</div>';
+    };
+    rdr3.readAsDataURL(f);
+  }
 };
 
 /* ── SAMPLE DATA ── */
@@ -2479,14 +2627,204 @@ window.bizLoadSample = function(){
 /* ── ANALYSIS ── */
 var loadingMsgs = ['Reading your financials...','Mapping cost structure...','Running SEA luxury benchmarks...','Generating SWOT...','Building intelligence report...'];
 
+/* ── FILE EXTRACTION ── */
+window.bizExtractFromFile = function(csvData){
+  var loading = document.getElementById('biz-loading');
+  loading.classList.add('visible');
+  document.getElementById('biz-loading-text').textContent = 'Extracting financial data from file...';
+  document.getElementById('biz-analyse-btn').disabled = true;
+  var fileCtx = _bizFileInfo ? 'File: '+_bizFileInfo.name+', Sheet: '+_bizFileInfo.bestSheet+'. ' : '';
+  var instructions = fileCtx+'You are a financial data extraction agent for hotel F&B P&L statements. Extract the ACTUAL numbers from the data.';
+  var format = 'Return ONLY valid JSON no markdown: {"property":"outlet name if found else empty","revenue":0,"foodCost":0,"bevCost":0,"labourCost":0,"covers":0,"segment":"luxury-resort"}';
+  var rules = 'CRITICAL rules: 1) Extract REAL numbers only — no examples or placeholders. 2) Revenue=total net revenue or total income. 3) foodCost=food cost of goods sold (not revenue). 4) bevCost=beverage cost of goods sold. 5) labourCost=total staff/payroll/labour cost. 6) covers=total covers or guests served. 7) All numbers must be the actual values from the spreadsheet. 8) If genuinely not found return 0.';
+  var prompt = instructions+' '+format+' '+rules+' DATA:'+String.fromCharCode(10)+csvData.substring(0,12000);
+  fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,messages:[{role:'user',content:prompt}]})
+  }).then(function(r){return r.json();}).then(function(data){
+    loading.classList.remove('visible');
+    document.getElementById('biz-analyse-btn').disabled=false;
+    var raw=(data.content||[]).map(function(c){return c.text||'';}).join('');
+    var clean=raw;
+    try{var fi=raw.indexOf('{');var li=raw.lastIndexOf('}');if(fi>=0&&li>fi)clean=raw.slice(fi,li+1);}catch(x){}
+    var ex={};
+    try{ ex=JSON.parse(clean); }catch(err){
+      /* JSON parse failed — try regex extraction as fallback */
+      var numMatch=function(label){ var m=raw.match(new RegExp(label+'[^0-9]*([0-9][0-9,\.]+)','i')); return m?parseFloat(m[1].replace(/,/g,'')):0; };
+      ex.revenue=numMatch('revenue')||numMatch('total.*income')||numMatch('net.*sales')||0;
+      ex.foodCost=numMatch('food.*cost')||numMatch('cost.*food')||0;
+      ex.bevCost=numMatch('bev.*cost')||numMatch('beverage.*cost')||0;
+      ex.labourCost=numMatch('labour')||numMatch('labor')||numMatch('payroll')||numMatch('staff')||0;
+      ex.covers=numMatch('covers')||numMatch('pax')||numMatch('guests')||0;
+    }
+    if(ex.property)document.getElementById('biz-m-property').value=ex.property;
+    if(ex.revenue)document.getElementById('biz-m-rev').value=ex.revenue;
+    if(ex.foodCost)document.getElementById('biz-m-food').value=ex.foodCost;
+    if(ex.bevCost)document.getElementById('biz-m-bev').value=ex.bevCost;
+    if(ex.labourCost)document.getElementById('biz-m-labour').value=ex.labourCost;
+    if(ex.covers)document.getElementById('biz-m-covers').value=ex.covers;
+    if(ex.segment)document.getElementById('biz-m-segment').value=ex.segment;
+    var zone=document.getElementById('biz-pl-zone');
+    var hasData=(ex.revenue||ex.foodCost||ex.bevCost||ex.labourCost);
+    var summary=hasData
+      ?'Revenue: '+(ex.revenue||'—')+' | Food: '+(ex.foodCost||'—')+' | Bev: '+(ex.bevCost||'—')+' | Labour: '+(ex.labourCost||'—')
+      :'Could not auto-extract — please fill fields manually';
+    var color=hasData?'var(--moss)':'var(--amber)';
+    if(zone){
+      zone.innerHTML+='<div style="margin-top:.5rem;font-family:var(--fm);font-size:.72rem;color:'+color+'">'+summary+'</div>';
+      if(!hasData){
+        zone.innerHTML+='<div style="margin-top:.4rem;font-family:var(--fm);font-size:.68rem;color:var(--smoke)">Tip: For best results save your P&L as a simple CSV with columns: Revenue, Food Cost, Bev Cost, Labour, Covers</div>';
+      }
+    }
+    _bizUploadedData=null;
+  }).catch(function(){
+    loading.classList.remove('visible');
+    document.getElementById('biz-analyse-btn').disabled=false;
+    var zone=document.getElementById('biz-pl-zone');
+    if(zone)zone.innerHTML+='<div style="margin-top:.5rem;font-family:var(--fm);font-size:.72rem;color:var(--red)">Extraction failed — please fill in the fields manually</div>';
+  });
+};
+
+window.bizAnalysePDF = function(base64DataUrl){
+  var loading=document.getElementById('biz-loading');
+  loading.classList.add('visible');
+  document.getElementById('biz-loading-text').textContent='Reading PDF...';
+  document.getElementById('biz-analyse-btn').disabled=true;
+  var base64=base64DataUrl.split(',')[1];
+  var prompt='Extract P&L financial figures. Return ONLY valid JSON: {"property":"name","revenue":0,"foodCost":0,"bevCost":0,"labourCost":0,"covers":0,"segment":"luxury-resort"}';
+  var _bizKey4=localStorage.getItem('cultivate_api_key')||window.ANTHROPIC_KEY||'';
+  fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',headers:{'Content-Type':'application/json','x-api-key':_bizKey4,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,messages:[{role:'user',content:[
+      {type:'document',source:{type:'base64',media_type:'application/pdf',data:base64}},
+      {type:'text',text:prompt}
+    ]}]})
+  }).then(function(r){return r.json();}).then(function(data){
+    loading.classList.remove('visible');
+    document.getElementById('biz-analyse-btn').disabled=false;
+    var raw=(data.content||[]).map(function(c){return c.text||'';}).join('');
+    var clean=raw;try{var fi=raw.indexOf('{');var li=raw.lastIndexOf('}');if(fi>=0&&li>fi)clean=raw.slice(fi,li+1);}catch(x){}
+    try{
+      var ex=JSON.parse(clean);
+      if(ex.property)document.getElementById('biz-m-property').value=ex.property;
+      if(ex.revenue)document.getElementById('biz-m-rev').value=ex.revenue;
+      if(ex.foodCost)document.getElementById('biz-m-food').value=ex.foodCost;
+      if(ex.bevCost)document.getElementById('biz-m-bev').value=ex.bevCost;
+      if(ex.labourCost)document.getElementById('biz-m-labour').value=ex.labourCost;
+      if(ex.covers)document.getElementById('biz-m-covers').value=ex.covers;
+      _bizUploadedData=null;
+    }catch(err){ alert('Could not extract from PDF. Please fill in manually.'); }
+  }).catch(function(){ loading.classList.remove('visible'); document.getElementById('biz-analyse-btn').disabled=false; });
+};
+
+
+window.bizAnalyseFromFile = function(csvData){
+  var loading = document.getElementById('biz-loading');
+  loading.classList.add('visible');
+  document.getElementById('biz-loading-text').textContent = 'Reading your P&L file...';
+  document.getElementById('biz-analyse-btn').disabled = true;
+  var segment = document.getElementById('biz-m-segment').value||'luxury-resort';
+  var property = document.getElementById('biz-m-property').value||'';
+  var fileCtx = _bizFileInfo ? 'File: '+_bizFileInfo.name+', Sheet: '+_bizFileInfo.bestSheet+'. ' : '';
+
+  /* Single AI call: extract numbers AND analyse */
+  var prompt = fileCtx+'You are a senior F&B financial intelligence agent for Cultivate Studio. '
+    +'Read this F&B P&L data, extract the key financial figures, then produce a full analysis. '
+    +'Property: '+(property||'from the data')+'. Segment: '+segment+'. '
+    +'STEP 1 - Extract these figures from the data (use actual numbers, not examples): '
+    +'Total Revenue, Food Cost, Beverage Cost, Labour Cost, Total Covers, and calculate Food Cost %, Bev Cost %, Labour %, GOP %, Revenue per Cover. '
+    +'STEP 2 - Run full financial analysis. '
+    +'Return ONLY valid JSON no markdown: '
+    +'{"property":"outlet name","revenue":0,"foodCost":0,"bevCost":0,"labourCost":0,"covers":0,'
+    +'"foodPct":"0.0","bevPct":"0.0","labourPct":"0.0","gopPct":"0.0","revPAC":"0",'
+    +'"narrative":"3 paragraphs: what the numbers say, biggest risk, biggest opportunity",'
+    +'"swot":{"strengths":["","",""],"weaknesses":["","",""],"opportunities":["","",""],"threats":["","",""]},'
+    +'"swotNarrative":"1-2 sentences on most critical strategic move",'
+    +'"benchmarkNarrative":"2-3 sentences comparing to SEA luxury F&B benchmarks"} '
+    +'DATA:'+String.fromCharCode(10)+csvData.substring(0,15000);
+
+  var msgInterval;
+  var msgs=['Reading your P&L file...','Identifying F&B figures...','Calculating cost percentages...','Running benchmark comparison...','Building your intelligence report...'];
+  var mi=0;
+  msgInterval = setInterval(function(){ document.getElementById('biz-loading-text').textContent=msgs[Math.min(mi++,msgs.length-1)]; },1000);
+
+  var _bizKey=localStorage.getItem('cultivate_api_key')||window.ANTHROPIC_KEY||'';
+  if(!_bizKey){ clearInterval(msgInterval); loading.classList.remove('visible'); document.getElementById('biz-analyse-btn').disabled=false; alert('API key not set. Go to Settings and add your Anthropic API key.'); return; }
+  fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',headers:{'Content-Type':'application/json','x-api-key':_bizKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,messages:[{role:'user',content:prompt}]})
+  }).then(function(r){return r.json();}).then(function(data){
+    clearInterval(msgInterval);
+    loading.classList.remove('visible');
+    document.getElementById('biz-analyse-btn').disabled=false;
+    var raw=(data.content||[]).map(function(c){return c.text||'';}).join('');
+    var clean=raw;
+    try{var fi=raw.indexOf('{');var li=raw.lastIndexOf('}');if(fi>=0&&li>fi)clean=raw.slice(fi,li+1);}catch(x){}
+    try{
+      var ai=JSON.parse(clean);
+      /* Populate fields with extracted values */
+      if(ai.property&&!property)document.getElementById('biz-m-property').value=ai.property;
+      if(ai.revenue)document.getElementById('biz-m-rev').value=ai.revenue;
+      if(ai.foodCost)document.getElementById('biz-m-food').value=ai.foodCost;
+      if(ai.bevCost)document.getElementById('biz-m-bev').value=ai.bevCost;
+      if(ai.labourCost)document.getElementById('biz-m-labour').value=ai.labourCost;
+      if(ai.covers)document.getElementById('biz-m-covers').value=ai.covers;
+      /* Set bizData for charts */
+      var rev=ai.revenue||0;
+      bizData={
+        rev:rev,food:ai.foodCost||0,bev:ai.bevCost||0,labour:ai.labourCost||0,
+        covers:ai.covers||0,segment:segment,property:ai.property||property,
+        foodPct:ai.foodPct||(rev>0?((ai.foodCost||0)/rev*100).toFixed(1):'0'),
+        bevPct:ai.bevPct||(rev>0?((ai.bevCost||0)/rev*100).toFixed(1):'0'),
+        labourPct:ai.labourPct||(rev>0?((ai.labourCost||0)/rev*100).toFixed(1):'0'),
+        gopPct:ai.gopPct||'0',
+        revPAC:ai.revPAC||(ai.covers>0?(rev/ai.covers).toFixed(0):'0'),
+        otherCost:rev*0.18
+      };
+      _bizUploadedData=null;
+      /* Render full analysis */
+      bizRenderAll(ai);
+      /* Switch to Analysis tab */
+      bizTab('analysis', document.querySelectorAll('#page-pl .biz-tab-row:first-of-type .biz-tab')[1]);
+      /* Show confirmation in upload zone */
+      var zone=document.getElementById('biz-pl-zone');
+      if(zone)zone.innerHTML='<div class="biz-upload-title" style="color:var(--moss)">&#10003; '+(ai.property||'P&L')+' extracted &amp; analysed</div>'
+        +'<div class="biz-upload-sub">Revenue: '+(ai.revenue||'—')+' | Food: '+(ai.foodPct||'—')+'% | Bev: '+(ai.bevPct||'—')+'% | Labour: '+(ai.labourPct||'—')+'%</div>';
+    }catch(err){
+      /* Fallback: show raw response for user to read */
+      var zone=document.getElementById('biz-pl-zone');
+      if(zone)zone.innerHTML+='<div style="margin-top:.5rem;font-family:var(--fm);font-size:.72rem;color:var(--amber)">Could not auto-extract — enter figures manually then click Analyse</div>'
+        +'<div style="margin-top:.3rem;font-family:var(--fm);font-size:.65rem;color:var(--smoke)">Tip: Export just the summary P&L sheet as CSV for best results</div>';
+    }
+  }).catch(function(){
+    clearInterval(msgInterval);
+    loading.classList.remove('visible');
+    document.getElementById('biz-analyse-btn').disabled=false;
+    var zone=document.getElementById('biz-pl-zone');
+    if(zone)zone.innerHTML+='<div style="margin-top:.5rem;font-family:var(--fm);font-size:.72rem;color:var(--red)">Connection error — please fill in fields manually</div>';
+  });
+};
+
+
 window.bizRunAnalysis = function(){
-  var rev = parseFloat(document.getElementById('biz-m-rev').value)||4500000;
-  var food = parseFloat(document.getElementById('biz-m-food').value)||1350000;
-  var bev = parseFloat(document.getElementById('biz-m-bev').value)||270000;
-  var labour = parseFloat(document.getElementById('biz-m-labour').value)||900000;
-  var covers = parseFloat(document.getElementById('biz-m-covers').value)||3200;
+  var rev = parseFloat(document.getElementById('biz-m-rev').value)||0;
+  var food = parseFloat(document.getElementById('biz-m-food').value)||0;
+  var bev = parseFloat(document.getElementById('biz-m-bev').value)||0;
+  var labour = parseFloat(document.getElementById('biz-m-labour').value)||0;
+  var covers = parseFloat(document.getElementById('biz-m-covers').value)||0;
   var segment = document.getElementById('biz-m-segment').value||'luxury-resort';
   var property = document.getElementById('biz-m-property').value||'Your Property';
+  /* If file uploaded with no manual figures, run file-based analysis */
+  if(_bizUploadedData && _bizUploadedData.indexOf('data:application/pdf')===0){
+    bizAnalysePDF(_bizUploadedData); return;
+  }
+  var hasFileData = _bizUploadedData && _bizUploadedData.length>100;
+  if(hasFileData && !rev){ bizAnalyseFromFile(_bizUploadedData); return; }
+  if(!rev){
+    var zone2=document.getElementById('biz-pl-zone');
+    if(zone2)zone2.innerHTML+='<div style="margin-top:.5rem;font-family:var(--fm);font-size:.72rem;color:var(--red)">Please enter Total Revenue or upload a P&L file</div>';
+    return;
+  }
 
   var foodPct = (food/rev*100).toFixed(1);
   var bevPct = (bev/rev*100).toFixed(1);
@@ -2496,6 +2834,7 @@ window.bizRunAnalysis = function(){
   var revPAC = (rev/covers).toFixed(0);
 
   bizData = {rev,food,bev,labour,covers,segment,property,foodPct,bevPct,labourPct,gopPct,revPAC,otherCost};
+  try{localStorage.setItem('biz_last_data',JSON.stringify(bizData));}catch(e){}
 
   document.getElementById('biz-analyse-btn').disabled = true;
   var loading = document.getElementById('biz-loading');
@@ -2506,9 +2845,11 @@ window.bizRunAnalysis = function(){
 
   var prompt = 'You are a senior F&B financial intelligence agent for Cultivate Studio luxury hospitality consultancy.\n\nProperty: '+property+'\nSegment: '+segment+'\nRevenue: '+rev.toLocaleString()+'\nFood Cost %: '+foodPct+'%\nBeverage Cost %: '+bevPct+'%\nLabour Cost %: '+labourPct+'%\nEstimated GOP %: '+gopPct+'%\nRevenue per Cover: '+parseInt(revPAC).toLocaleString()+'\n\nReturn ONLY a valid JSON object, no markdown, no backticks, no preamble:\n{\n"narrative":"3 paragraphs: (1) what the numbers say, (2) biggest risk, (3) biggest untapped opportunity. Direct, senior F&B strategist tone.",\n"swot":{"strengths":["item","item","item"],"weaknesses":["item","item","item"],"opportunities":["item","item","item"],"threats":["item","item","item"]},\n"swotNarrative":"1-2 sentences on the single most critical strategic move right now.",\n"benchmarkNarrative":"2-3 sentences comparing these numbers to SEA luxury F&B market norms with specific figures."\n}';
 
+  var _bizKey2=localStorage.getItem('cultivate_api_key')||window.ANTHROPIC_KEY||'';
+  if(!_bizKey2){ clearInterval(interval); loading.classList.remove('visible'); document.getElementById('biz-analyse-btn').disabled=false; alert('API key not set.'); return; }
   fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','x-api-key':_bizKey2,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
     body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
   }).then(function(r){return r.json();}).then(function(data){
     clearInterval(interval);
@@ -2516,7 +2857,11 @@ window.bizRunAnalysis = function(){
     document.getElementById('biz-analyse-btn').disabled = false;
     var raw = (data.content||[]).map(function(c){return c.text||'';}).join('');
     var clean = raw.replace(new RegExp(String.fromCharCode(96,96,96)+'json|'+String.fromCharCode(96,96,96),'g'),'').trim();
-    try{ bizRenderAll(JSON.parse(clean)); }catch(e){ bizRenderFallback(); }
+    try{
+      var _aiParsed=JSON.parse(clean);
+      try{localStorage.setItem('biz_last_ai',JSON.stringify(_aiParsed));}catch(e){}
+      bizRenderAll(_aiParsed);
+    }catch(e){ bizRenderFallback(); }
   }).catch(function(){
     clearInterval(interval);
     loading.classList.remove('visible');
@@ -2527,6 +2872,8 @@ window.bizRunAnalysis = function(){
 
 function bizRenderAll(ai){
   var d = bizData;
+  if(!d||!d.rev){ console.warn('bizRenderAll: no bizData'); return; }
+  try{
 
   /* metrics */
   document.getElementById('biz-metrics-grid').innerHTML = [
@@ -2541,7 +2888,8 @@ function bizRenderAll(ai){
   }).join('');
 
   /* narrative */
-  document.getElementById('biz-narrative-text').innerHTML = ai.narrative.split('\n').filter(function(p){return p.trim();}).map(function(p){return '<p>'+p+'</p>';}).join('');
+  var narr = ai.narrative||ai.summary||'Analysis complete. Review the metrics and charts below.';
+  document.getElementById('biz-narrative-text').innerHTML = narr.split('\n').filter(function(p){return p.trim();}).map(function(p){return '<p>'+p+'</p>';}).join('');
 
   /* charts */
   bizDestroyChart('biz-cost-chart');
@@ -2578,25 +2926,39 @@ function bizRenderAll(ai){
   document.getElementById('biz-analysis-empty').style.display='none';
   document.getElementById('biz-analysis-content').style.display='block';
 
-  /* SWOT */
-  var sw = ai.swot;
-  document.getElementById('biz-swot-grid').innerHTML = [
-    ['biz-swot-s','S','Strengths',sw.strengths],
-    ['biz-swot-w','W','Weaknesses',sw.weaknesses],
-    ['biz-swot-o','O','Opportunities',sw.opportunities],
-    ['biz-swot-t','T','Threats',sw.threats]
-  ].map(function(s){
-    return '<div class="biz-swot-card '+s[0]+'"><div class="biz-swot-letter">'+s[1]+'</div><div class="biz-swot-title">'+s[2]+'</div><ul>'+s[3].map(function(i){return '<li>'+i+'</li>';}).join('')+'</ul></div>';
-  }).join('');
-  /* SWOT is pre-analysis setup — save to localStorage so SWOT tab reflects it */
+  } catch(renderErr){
+    console.error('bizRenderAll error:', renderErr);
+    /* Show content anyway even if charts fail */
+    var _ae=document.getElementById('biz-analysis-empty');
+    var _ac=document.getElementById('biz-analysis-content');
+    if(_ae) _ae.style.display='none';
+    if(_ac) _ac.style.display='block';
+  }
+
+  /* SWOT — save to localStorage first, then render */
+  var sw = (ai&&ai.swot)||{strengths:[],weaknesses:[],opportunities:[],threats:[]};
   try{
-    var _sswots=JSON.parse(localStorage.getItem('biz_swots')||'{}');
-    var _scode=bizData&&bizData.property?bizData.property:'analysis';
-    if(!_sswots[_scode]&&ai.swot){
-      _sswots[_scode]={outlet:_scode,outletName:_scode,strengths:ai.swot.strengths||[],weaknesses:ai.swot.weaknesses||[],opportunities:ai.swot.opportunities||[],threats:ai.swot.threats||[],strategicRead:ai.swotNarrative||'',generated:new Date().toLocaleString(),savedAt:new Date().toLocaleString()};
-      localStorage.setItem('biz_swots',JSON.stringify(_sswots));
-    }
+    var _sswots2=JSON.parse(localStorage.getItem('biz_swots')||'{}');
+    var _scode2=bizData&&bizData.property?bizData.property:'analysis';
+    _sswots2[_scode2]={outlet:_scode2,outletName:_scode2,
+      strengths:sw.strengths||[],weaknesses:sw.weaknesses||[],
+      opportunities:sw.opportunities||[],threats:sw.threats||[],
+      strategicRead:(ai&&(ai.swotNarrative||ai.swotRead))||'',
+      generated:new Date().toLocaleString(),savedAt:new Date().toLocaleString()};
+    localStorage.setItem('biz_swots',JSON.stringify(_sswots2));
+    /* Save AI response for benchmark narrative */
+    if(ai) localStorage.setItem('biz_last_ai',JSON.stringify(ai));
   }catch(e){}
+  var _swotGrid=document.getElementById('biz-swot-grid');
+  if(_swotGrid) _swotGrid.innerHTML = [
+    ['biz-swot-s','S','Strengths',sw.strengths||[]],
+    ['biz-swot-w','W','Weaknesses',sw.weaknesses||[]],
+    ['biz-swot-o','O','Opportunities',sw.opportunities||[]],
+    ['biz-swot-t','T','Threats',sw.threats||[]]
+  ].map(function(s){
+    return '<div class="biz-swot-card '+s[0]+'"><div class="biz-swot-letter">'+s[1]+'</div><div class="biz-swot-title">'+s[2]+'</div><ul>'+(s[3]||[]).map(function(i){return '<li>'+i+'</li>';}).join('')+'</ul></div>';
+  }).join('');
+  /* SWOT save moved to before grid render above */
 
   /* benchmarks */
   var benches=[
@@ -2608,9 +2970,11 @@ function bizRenderAll(ai){
   document.getElementById('biz-bench-rows').innerHTML = benches.map(function(b){
     return '<div class="biz-bench-row"><div class="biz-bench-label">'+b.label+'</div><div class="biz-bench-bar-wrap"><div class="biz-bench-bar-you" style="width:'+Math.min(b.you,100)+'%"></div><div class="biz-bench-marker" style="left:'+b.market+'%"></div></div><div class="biz-bench-val">'+b.you.toFixed(1)+'%</div><span class="biz-bench-status '+(b.ok?'biz-b-ok':'biz-b-warn')+'">'+b.label2+'</span></div>';
   }).join('');
-  document.getElementById('biz-bench-narrative-text').innerHTML = '<p>'+ai.benchmarkNarrative+'</p>';
-  document.getElementById('biz-bench-empty').style.display='none';
-  document.getElementById('biz-bench-content').style.display='block';
+  document.getElementById('biz-bench-narrative-text').innerHTML = '<p>'+(ai.benchmarkNarrative||ai.compsetRead||'')+'</p>';
+  var _be=document.getElementById('biz-bench-empty');
+  var _bc=document.getElementById('biz-bench-content');
+  if(_be) _be.style.display='none';
+  if(_bc) _bc.style.display='block';
 
   bizTab('analysis',document.querySelectorAll('#page-pl .biz-tab-row:first-of-type .biz-tab')[1]);
 }
@@ -2635,11 +2999,20 @@ function bizDestroyChart(id){
 }
 
 window.bizAskAction = function(prompt){
-  if(typeof showPage==='function') showPage('ai');
+  /* Open the Cultivate Agent panel and send the prompt */
+  var trigger = document.getElementById('cs-agent-trigger');
+  if(trigger && !trigger.classList.contains('agent-open')) trigger.click();
   setTimeout(function(){
-    var inp = document.getElementById('chat-input')||document.querySelector('.chat-input,#user-input,textarea[placeholder*="Ask"]');
-    if(inp){ inp.value=prompt; inp.dispatchEvent(new Event('input')); }
-  },300);
+    /* Try agent chat input first */
+    var inp = document.querySelector('#cs-agent-panel textarea, #cs-agent-panel input[type="text"], .ag-input, .agent-input');
+    if(!inp) inp = document.querySelector('textarea[placeholder*="Ask"], #chat-input, #user-input');
+    if(inp){
+      inp.value = prompt;
+      inp.dispatchEvent(new Event('input',{bubbles:true}));
+      inp.dispatchEvent(new Event('change',{bubbles:true}));
+      inp.focus();
+    }
+  }, 400);
 };
 
 /* ── CAPEX ── */
@@ -3244,7 +3617,7 @@ capexRenderNotifications();
         <div style="font-size:1.4rem;margin-bottom:.3rem">📊</div>
         <div style="font-size:1.02rem;color:var(--smoke);margin-bottom:.2rem">Drop P&L file here — or click to browse</div>
         <div style="font-family:var(--fm);font-size:.94rem;letter-spacing:.1em;text-transform:uppercase;color:var(--smoke)">.xlsx · .xls · .csv · .pdf</div>
-        <input type="file" id="st-pl-file" accept=".xlsx,.xls,.csv,.pdf" style="display:none" onchange="stPlFile(event)">
+        <input type="file" id="st-pl-file" accept=".xlsx,.xls,.xlsm,.csv,.pdf" style="display:none" onchange="stPlFile(event)">
       </div>
       <div id="st-pl-status" style="display:none;font-size:.95rem;color:var(--moss);margin-bottom:.6rem"></div>
 
