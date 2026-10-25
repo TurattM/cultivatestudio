@@ -196,7 +196,7 @@ p{margin:0}
 .direct span{font:400 10.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:rgba(247,242,234,.7)}
 .direct b{font:400 16px/1.3 var(--body);text-align:right;word-break:break-word}
 .copy{background:none;border:1px solid rgba(247,242,234,.4);color:var(--linen);font:400 10px var(--mono);letter-spacing:.12em;padding:6px 10px;cursor:pointer;margin-left:10px}
-form{display:grid;gap:16px;background:var(--oat);color:var(--text);padding:clamp(26px,3.5vw,44px)}
+form{display:grid;gap:16px;align-content:start;align-self:start;background:var(--oat);color:var(--text);padding:clamp(26px,3.5vw,44px)}
 .f2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 label{display:grid;gap:8px;font:400 10.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--text-2)}
 input,select,textarea{font:300 16px/1.4 var(--body);color:var(--text);background:var(--linen);border:0;border-bottom:1px solid var(--sand);padding:13px 12px;width:100%;min-width:0;border-radius:0}
@@ -426,16 +426,15 @@ footer a:hover{color:var(--oat)}
   <div class="wrap cgrid">
     <div class="rv">
       <p class="label">Where it goes next</p>
-      <h2 style="margin-top:18px">This is where the <em>conversation</em> starts</h2>
-      <p class="sub" style="margin-top:22px">The platform works. The question now is how it grows beyond one chef and one property. I am opening a small number of conversations, quietly.</p>
+      <h2 style="margin-top:18px">Looking for people to take it <em>further</em></h2>
+      <p class="sub" style="margin-top:22px">The platform works and runs every day. What it needs now is people to scale it: to invest in it, to build it out, and to bring it to more kitchens than one chef can reach on his own. If that is you, let’s talk.</p>
       <div class="ways">
+        <div><span>Partners &amp; investors</span><b>Scale it and build it</b><p>People from hospitality, software or investment who want to take Cultivate from one property to many: funding, product, technology, growth.</p></div>
         <div><span>Operators</span><b>Run it in your kitchen</b><p>A restaurant, a hotel or a group that wants to pilot it with real recipes and real prices, with the chef who built it onboarding you.</p></div>
-        <div><span>Partners</span><b>Help it grow</b><p>People from hospitality or software who have taken a product like this further than one person can, and would like to talk about doing it together.</p></div>
-        <div><span>Curious</span><b>Just want to see it</b><p>A short live walk-through, no pitch.</p></div>
+        <div><span>Access</span><b>See it from inside</b><p>Ask for access and you will be set up with your own space, or book a short live walk-through.</p></div>
       </div>
       <div class="direct">
         <div><span>Email</span><b><a href="mailto:studio@cultivate-studio.com" style="padding:0;border:0">studio@cultivate-studio.com</a><button class="copy" type="button" id="copyBtn">Copy</button></b></div>
-        <a href="https://app.cultivate-studio.com" target="_blank" rel="noopener"><span>The app</span><b>app.cultivate-studio.com →</b></a>
       </div>
     </div>
     <form id="enquiry" class="rv" novalidate>
@@ -447,9 +446,10 @@ footer a:hover{color:var(--oat)}
         <label for="f-company">Company / property<input id="f-company" name="company" autocomplete="organization"></label>
         <label for="f-type">I’d like to
           <select id="f-type" name="type">
-            <option>See a live walk-through</option>
+            <option>Invest in it or build it</option>
+            <option>Request access to try it</option>
             <option>Pilot it in my kitchen</option>
-            <option>Talk about helping it grow</option>
+            <option>See a live walk-through</option>
             <option>Something else</option>
           </select>
         </label>
@@ -466,7 +466,7 @@ footer a:hover{color:var(--oat)}
 <footer>
   <div class="wrap">
     <p>© 2026 Cultivate Studio · Marco Turatti · Phuket</p>
-    <nav><a href="../">The studio</a><a href="../">Marco</a><a href="#how">How it works</a><a href="https://app.cultivate-studio.com" target="_blank" rel="noopener">Sign in</a></nav>
+    <nav><a href="../">The studio</a><a href="../">Marco</a><a href="#how">How it works</a><a href="#talk">Contact</a></nav>
   </div>
 </footer>
 
